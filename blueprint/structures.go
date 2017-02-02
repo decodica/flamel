@@ -4,6 +4,13 @@ package blueprint
 import (
 	"reflect"
 	"log"
+	"time"
+	"fmt"
+	"strconv"
+	"strings"
+	"google.golang.org/appengine/datastore"
+	"google.golang.org/appengine"
+	"errors"
 )
 
 
@@ -20,6 +27,7 @@ var (
 type encodedField struct {
 	index int
 	childStruct *encodedStruct
+	tag string
 }
 
 type encodedStruct struct {
@@ -42,6 +50,19 @@ func mapStructure(t reflect.Type, s *encodedStruct, parentName string) {
 	//iterate over struct props
 	for i := 0; i < t.NumField(); i++ {
 		field := t.Field(i);
+
+		//skip model mapping in field
+		if field.Type == typeOfModel {
+			continue
+		}
+
+		tags := strings.Split(field.Tag.Get(tag_domain), ",")
+		tagName := tags[0]
+
+		if tagName == tag_skip {
+			continue
+		}
+
 		sName := parentName + "." + field.Name
 		sValue := encodedField{index:i}
 
@@ -67,6 +88,8 @@ func mapStructure(t reflect.Type, s *encodedStruct, parentName string) {
 
 				//we already mapped the struct, skip further computations
 				if _, ok := encodedStructs[field.Type]; ok {
+					log.Printf("!!!Struct of type %s already mapped. Using mapped value %v", field.Type, encodedStructs[field.Type])
+					sValue.childStruct = encodedStructs[field.Type]
 					continue
 				}
 
@@ -102,13 +125,13 @@ func mapStructure(t reflect.Type, s *encodedStruct, parentName string) {
 		}
 
 		s.fieldNames[sName] = sValue;
-		log.Printf("%s\n", sName)
+		log.Printf("Struct of type %s has fieldName %s\n", t.Name(), sName)
 	}
 	encodedStructs[t] = s;
 }
 
 
-/*func encodeStruct(s interface{}, props *[]datastore.Property, multiple bool, codec *encodedStruct) error {
+func encodeStruct(s interface{}, props *[]datastore.Property, multiple bool, codec *encodedStruct) error {
 
 	name := codec.structName;
 	value := reflect.ValueOf(s).Elem();
@@ -367,12 +390,12 @@ func baseName(name string) string {
 }
 
 
-func (data *dataMap) toPropertyList() ([]datastore.Property, error) {
+func toPropertyList(modelable modelable) ([]datastore.Property, error) {
 
-	data.Print("==== SAVE MODEL ==== SAVING ENTITY: " + reflect.TypeOf(data.m).Elem().String());
-
-	value := reflect.ValueOf(data.m).Elem();
+	value := reflect.ValueOf(modelable).Elem();
 	sType := value.Type();
+
+	model := modelable.getModel();
 
 	var props []datastore.Property;
 
@@ -380,6 +403,10 @@ func (data *dataMap) toPropertyList() ([]datastore.Property, error) {
 	//and handle them accordingly to their type
 	for i := 0; i < sType.NumField(); i++ {
 		field := sType.Field(i);
+
+		if field.Type == typeOfModel {
+			continue
+		}
 
 		//_, isProto := value.Field(i).Addr().Interface().(Prototype);
 		//skip datastore skippable flags
@@ -389,42 +416,23 @@ func (data *dataMap) toPropertyList() ([]datastore.Property, error) {
 
 		//check if field index is a reference
 		//if it is, ref is a data and we can treat it accordingly
-		if ref, ok := data.references[i]; ok {
-			data.Print("==== SAVE MODEL ==== FOUND REFERENCE AT INDEX : " + strconv.Itoa(i) +
-			" OF TYPE: " + reflect.TypeOf(ref.m).Elem().String());
-
-
-
-			if nil == ref.key {
-				//if new and the struct is not nil, create the key.
-				i := value.Field(i).Interface();
-				zero := reflect.Zero(field.Type).Interface();
-
-				if i == zero {
-					continue;
-				}
-
-				ref.Create();
-
-
-			} else {
-				ref.Update();
-			}
+		//todo: we handle this looping OUTSIDE the call
+		if rm, ok := model.references[i]; ok {
+			ref := rm.getModel();
 
 			//pass reference types to datastore as *datastore.Key type
-			name := ref_model_prefix + ref.entityName;
+			name := ref_model_prefix + ref.structName;
 			p := datastore.Property{Name:name, Value:ref.key};
 			props = append(props, p);
-			continue;
+			continue
 		}
 
 		v := value.Field(i);
 
 		p := &datastore.Property{};
 
-		p.Name = field.Name;
+		p.Name = sType.Name() + "." + field.Name;
 
-		data.Print("==== SAVE ==== saving field " + field.Name);
 		switch x := v.Interface().(type) {
 		case time.Time:
 			p.Value = x
@@ -448,7 +456,7 @@ func (data *dataMap) toPropertyList() ([]datastore.Property, error) {
 				p.Multiple = true;
 
 				if v.Type().Elem().Kind() != reflect.Uint8 {
-					if val, ok := data.values[field.Name]; ok {
+					if val, ok := model.fieldNames[p.Name]; ok {
 						for j := 0; j < v.Len(); j++ {
 							if err := encodeStruct(v.Index(j).Addr().Interface(), &props, true, val.childStruct); err != nil {
 								panic(err);
@@ -463,11 +471,11 @@ func (data *dataMap) toPropertyList() ([]datastore.Property, error) {
 
 			case reflect.Struct:
 				if !v.CanAddr() {
-					return nil, fmt.Errorf("datastore: unsupported struct field: value is unaddressable")
+					return nil, fmt.Errorf("datastore: unsupported struct field %s: value is unaddressable", field.Name)
 				}
 				//if struct, recursively call itself until an error is found
 				//as debug, check consistency. we should have a value at i
-				if val, ok := data.values[field.Name]; ok {
+				if val, ok := model.fieldNames[p.Name]; ok {
 					err := encodeStruct(v.Addr().Interface(), &props, false, val.childStruct);
 					if err != nil {
 						panic(err);
@@ -475,7 +483,7 @@ func (data *dataMap) toPropertyList() ([]datastore.Property, error) {
 					continue;
 				}
 
-				return nil, fmt.Errorf("Inconsistent data. Struct values not consistent at index: " + strconv.Itoa(i));
+				return nil, fmt.Errorf("FieldName % s not found in %v for Entity of type %s", p.Name, model.fieldNames, sType);
 			}
 		}
 
@@ -486,29 +494,22 @@ func (data *dataMap) toPropertyList() ([]datastore.Property, error) {
 }
 
 
-func (data *dataMap) fromPropertyList(props []datastore.Property) error {
+func fromPropertyList(modelable modelable, props []datastore.Property) error {
 
-	data.Print("==== LOAD MODEL ==== ***************************");
-	data.Print("==== LOAD MODEL ==== LOADING ENTITY: " + reflect.TypeOf(data.m).Elem().String());
 	//get the underlying prototype
-	value := reflect.ValueOf(data.m).Elem();
-	//valueType := value.Type();
-
-	for key, _ := range data.values {
-		data.Print("Model has values with key: " + key);
-	}
+	//value := reflect.ValueOf(modelable).Elem();
+	model := modelable.getModel();
 
 	for _, p := range props {
-		data.Printf("Property with name %s has value %v", p.Name, p.Value);
 		//field is the value of a struct field
 		//var field reflect.Value;
 		//check if prop is in data base struct
 		//log.gPrint("==== LOAD MODEL ==== Field of prop " + p.Name + " HAS KIND: " + field.Kind().String());
 
 		//LOAD FIRST LEVEL VALUES (EITHER VALUES OR REFERENCES OR INVALID)
-		if attr, ok := data.values[p.Name]; ok {
+		if attr, ok := model.fieldNames[p.Name]; ok {
 
-			if (attr.isReference) {
+			/*if (attr.isReference) {
 				ref, ok := data.references[attr.index];
 				if !ok {
 					panic("Error - Unconsistent data - should have a reference at index: " + strconv.Itoa(attr.index));
@@ -533,13 +534,13 @@ func (data *dataMap) fromPropertyList(props []datastore.Property) error {
 
 				field.Set(reflect.ValueOf(ref.m).Elem());
 				continue
-			}
+			}*/
 
 			//plain value case:
 			if attr.childStruct == nil {
 				//if its a plain value (i.e. not belonging to a referenced struct)
 				//decode the field
-				err := data.decodeField(reflect.ValueOf(data.m), p, attr);
+				err := model.decodeField(reflect.ValueOf(modelable), p, attr);
 				if nil != err {
 					panic(err);
 				}
@@ -550,12 +551,12 @@ func (data *dataMap) fromPropertyList(props []datastore.Property) error {
 
 		//if is not in the first level get the first level name
 		firstLevelName := strings.Split(p.Name, ".")[0];
-		if attr, ok := data.values[firstLevelName]; ok {
-			v := reflect.ValueOf(data.m).Elem();
-			field := v.Field(attr.index);
-			data.Print("==== LOAD MODEL ==== NESTED FIELD OF KIND " + field.Kind().String() + " FOR PROPERTY "  + p.Name );
+		if attr, ok := model.fieldNames[firstLevelName]; ok {
+			//v := reflect.ValueOf(modelable).Elem();
+			//field := v.Field(attr.index);
+			//data.Print("==== LOAD MODEL ==== NESTED FIELD OF KIND " + field.Kind().String() + " FOR PROPERTY "  + p.Name );
 			//gPrint("==== LOAD MODEL ==== PROPERTY " + p.Name + " IS OF TYPE NESTED VALUE - FIRST LEVEL NAME IS: " + firstLevelName);
-			err := data.decodeField(reflect.ValueOf(data.m), p, attr);
+			err := model.decodeField(reflect.ValueOf(modelable), p, attr);
 
 			if nil != err {
 				panic(err);
@@ -564,4 +565,4 @@ func (data *dataMap) fromPropertyList(props []datastore.Property) error {
 	}
 
 	return nil;
-}*/
+}

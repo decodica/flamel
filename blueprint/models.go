@@ -1,6 +1,6 @@
 package blueprint
 
-import "google.golang.org/appengine/datastore"
+/*import "google.golang.org/appengine/datastore"
 
 //slice of dataMaps. It is sortable by each dataMap key
 type dataMaps []*dataMap;
@@ -40,4 +40,4 @@ func (data dataMaps) KeyMap() (map[*datastore.Key]*dataMap, []int) {
 		keyMap[k] = data[i];
 	}
 	return keyMap, nilIdx;
-}
+}*/

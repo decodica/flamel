@@ -16,6 +16,8 @@ import (
 //	"sync"
 	"log"
 	"fmt"
+	"errors"
+	"strings"
 )
 
 var (
@@ -28,16 +30,18 @@ var (
 
 const ref_model_prefix string = "ref_";
 
+const model_modelable_field_name string = "modelable";
+
 const val_serparator string = ".";
 
-const tag_domain string = "prototype";
+const tag_domain string = "model";
 
 const default_entry_count_per_read_batch int = 500;
 
 
 
 const tag_skip string = "-";
-
+const tag_search string = "search";
 const tag_noindex string = "noindex";
 
 type modelable interface {
@@ -50,8 +54,16 @@ type Model struct {
 	/*search.FieldLoadSaver
 	searchQuery string
 	searchable bool*/
-
+	//represents the mapping of the modelable containing this Model
 	*structure
+	//tool used in keeping trace of nested structs. todo: empty once loading is over
+	//it maps field with field position and keeps the record
+	propertyLoader `model:"-"`
+
+	key *datastore.Key
+
+	//the embedding modelable
+	modelable modelable `model:"-"`
 
 }
 
@@ -63,7 +75,7 @@ type structure struct {
 
 type dataMap struct {
 	context    context.Context
-	key        *datastore.Key
+
 	entityName string
 	m          Prototype
 	//references maps the field index with the prototype struct
@@ -110,7 +122,7 @@ func Register(m modelable) error {
 	mType := reflect.TypeOf(m).Elem()
 	//retrieve modelable anagraphics
 	obj := reflect.ValueOf(m).Elem()
-	name := obj.Type().String()
+	name := obj.Type().Name()
 
 	var s structure;
 	//check if the modelable structure has been already mapped
@@ -119,13 +131,32 @@ func Register(m modelable) error {
 	} else {
 		//map the struct
 		s.encodedStruct = newEncodedStruct()
+		s.structName = name;
 		mapStructure(mType, s.encodedStruct, name)
 	}
 
 	s.references = make(map[int]modelable)
 	//map the references of the model
 	for i := 0; i < obj.NumField(); i++ {
-		//todo: read tags
+
+		fType := mType.Field(i);
+
+		if obj.Field(i).Type() == typeOfModel {
+			//skip mapping of the model
+			continue
+		}
+
+		tags := strings.Split(fType.Tag.Get(tag_domain), ",")
+		tagName := tags[0]
+
+		if tagName == tag_skip {
+			log.Printf("Field %s is skippable.", fType.Name)
+			continue
+		}
+
+		if tagName == tag_search {
+			//todo
+		}
 
 		if obj.Field(i).Kind() == reflect.Struct {
 
@@ -145,13 +176,68 @@ func Register(m modelable) error {
 	}
 
 	model := Model{structure: &s}
+	//sets the wrapping object to the model (????)
+	model.modelable = m;
 
 	m.setModel(model)
-
-	log.Printf("Modelable: %+v", m)
+	log.Printf("Mapped modelable of type %s: %+v", mType, m)
+	log.Printf("Fields are %+v", model.fieldNames)
 
 	return nil
 }
+
+func (model *Model) Save() ([]datastore.Property, error) {
+	return toPropertyList(model.modelable);
+}
+
+func (model *Model) Load(props []datastore.Property) error {
+	return fromPropertyList(model.modelable, props);
+}
+
+//creates a datastore entity anmd stores the key into the model field
+func create(ctx context.Context, m modelable) error {
+	model := m.getModel();
+
+	if (model.key != nil) {
+		return errors.New("data has already been created");
+	}
+
+	//first create references and get the keys
+	for k, _ := range model.references {
+		ref := model.references[k];
+		refModel := ref.getModel();
+		log.Printf(">>>>> Creating reference %v ", ref)
+		if refModel.key == nil {
+			create(ctx, ref);
+		} else {
+			//todo: update
+		}
+	}
+
+	incompleteKey := datastore.NewIncompleteKey(ctx, model.structName, nil);
+	log.Printf(">>>>> Incomplete for struct %s key is %s ", model.structName, incompleteKey.String())
+
+	key, err := datastore.Put(ctx, incompleteKey, m);
+
+	if (err != nil) {
+		return err;
+	}
+
+	model.key = key;
+	//if data is cached, create the item in the memcache
+//	data.Print(" ==== MEMCACHE ==== SET IN CREATE FOR data " + data.entityName);
+
+//	data.cacheSet();
+
+
+//	data.Print("data " + data.entityName + " successfully created");
+	return nil;
+}
+
+func Create(ctx context.Context, m modelable) error {
+	return create(ctx, m);
+}
+
 
 
 //Creates a new model

@@ -56,9 +56,8 @@ type Model struct {
 	searchable bool*/
 	//represents the mapping of the modelable containing this Model
 	*structure
-	//tool used in keeping trace of nested structs. todo: empty once loading is over
 	//it maps field with field position and keeps the record
-	propertyLoader `model:"-"`
+	//propertyLoader `model:"-"`
 
 	key *datastore.Key
 
@@ -197,7 +196,6 @@ func Register(m modelable) error {
 	}
 
 	model := Model{structure: &s}
-	//sets the wrapping object to the model (????)
 	model.modelable = m;
 
 	m.setModel(model)

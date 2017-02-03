@@ -233,7 +233,7 @@ type propertyLoader struct {
 }
 
 //parentEncodedField represents a field of interface{} s
-func (l *propertyLoader) decodeField(s reflect.Value, p datastore.Property, encodedField encodedField) error {
+func decodeField(s reflect.Value, p datastore.Property, encodedField encodedField, l propertyLoader) error {
 
 	interf := s;
 	if (s.Kind() == reflect.Ptr) {
@@ -281,7 +281,7 @@ func (l *propertyLoader) decodeField(s reflect.Value, p datastore.Property, enco
 					gPrint("==== DECODE STRUCT ==== FOUND NESTED STRUCT " + encodedField.childStruct.structName +
 					" for Property "+ p.Name + " AND FOR FIELD " + field.Type().Field(attr.index).Name);
 
-					l.decodeField(field.Addr(), p, attr)
+					decodeField(field.Addr(), p, attr, l)
 				}
 
 				//else go down one level
@@ -291,7 +291,7 @@ func (l *propertyLoader) decodeField(s reflect.Value, p datastore.Property, enco
 					gPrint("==== DECODE STRUCT ==== FOUND NESTED STRUCT " + encodedField.childStruct.structName +
 					" for Property "+ p.Name + " AND FOR FIELD " + field.Type().Field(attr.index).Name);
 
-					l.decodeField(field.Addr(), p, attr);
+					decodeField(field.Addr(), p, attr, l);
 				}
 
 				return nil;
@@ -365,7 +365,7 @@ func (l *propertyLoader) decodeField(s reflect.Value, p datastore.Property, enco
 					gPrintf("==== DECODE STRUCT SLICE ==== Type of slice is %q", sliceElem.Type().String());
 					field.Set(reflect.Append(field, sliceElem));
 				}
-				l.decodeField(field.Index(index), p, encodedField.childStruct.fieldNames[p.Name]);
+				decodeField(field.Index(index), p, encodedField.childStruct.fieldNames[p.Name], l);
 				gPrintf("loader: %+v", l.mem);
 				//return errors.New("Error - NOT SUPPORTING SIMPLE SLICES AS OF YET");
 				break;
@@ -505,12 +505,14 @@ func fromPropertyList(modelable modelable, props []datastore.Property) error {
 	sType := value.Type();
 	model := modelable.getModel();
 
+	pl := propertyLoader{};
+
 	for _, p := range props {
 		//field is the value of a struct field
 		//var field reflect.Value;
 		//check if prop is in data base struct
 		//log.gPrint("==== LOAD MODEL ==== Field of prop " + p.Name + " HAS KIND: " + field.Kind().String());
-		log.Printf("==== LOAD MODEL ==== Reading prop with name %s", p.Name)
+		//log.Printf("==== LOAD MODEL ==== Reading prop with name %s", p.Name)
 
 		//if we have a reference
 		if key, ok := p.Value.(*datastore.Key); ok {
@@ -532,37 +534,9 @@ func fromPropertyList(modelable modelable, props []datastore.Property) error {
 
 		//load first level values.
 		if attr, ok := model.fieldNames[p.Name]; ok {
-
-			/*if (attr.isReference) {
-				ref, ok := data.references[attr.index];
-				if !ok {
-					panic("Error - Unconsistent data - should have a reference at index: " + strconv.Itoa(attr.index));
-				}
-				//we found a reference, load the data and assign the struct to the field
-				key, ok := p.Value.(*datastore.Key);
-
-				if !ok && p.Value != nil {
-					panic("Error - Unconsistent data - should have a reference at index " + strconv.Itoa(attr.index) + " for field with name " + p.Name);
-				}
-
-				field := value.Field(attr.index);
-				//it's alrgight, we have a key for a reference. Assign the key to the corrisponding data and load it
-				ref.key = key;
-				if data.loadRef {
-					err := ref.read();
-
-					if nil != err {
-						return err;
-					}
-				}
-
-				field.Set(reflect.ValueOf(ref.m).Elem());
-				continue
-			}*/
-
 			//decode the field if its a plain value (no struct, no pointer, no slice, not sure about map)
 			if attr.childStruct == nil {
-				err := model.decodeField(reflect.ValueOf(modelable), p, attr);
+				err := decodeField(reflect.ValueOf(modelable), p, attr, pl);
 				if nil != err {
 					return err;
 				}
@@ -573,12 +547,7 @@ func fromPropertyList(modelable modelable, props []datastore.Property) error {
 		//if is not in the first level get the first level name
 		//firstLevelName := strings.Split(p.Name, ".")[0];
 		if attr, ok := model.fieldNames[pureName(p.Name)]; ok {
-			//v := reflect.ValueOf(modelable).Elem();
-			//field := v.Field(attr.index);
-			//data.Print("==== LOAD MODEL ==== NESTED FIELD OF KIND " + field.Kind().String() + " FOR PROPERTY "  + p.Name );
-			//gPrint("==== LOAD MODEL ==== PROPERTY " + p.Name + " IS OF TYPE NESTED VALUE - FIRST LEVEL NAME IS: " + firstLevelName);
-			err := model.decodeField(reflect.ValueOf(modelable), p, attr);
-
+			err := decodeField(reflect.ValueOf(modelable), p, attr, pl);
 			if nil != err {
 				return err;
 			}

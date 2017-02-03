@@ -208,7 +208,12 @@ func create(ctx context.Context, m modelable) error {
 		refModel := ref.getModel();
 		log.Printf(">>>>> Creating reference %v ", ref)
 		if refModel.key == nil {
-			create(ctx, ref);
+			err := create(ctx, ref);
+			if err != nil {
+				log.Printf("Transaction for reference failed with error %s", err.Error())
+				return err;
+			}
+
 		} else {
 			//todo: update
 		}
@@ -224,18 +229,46 @@ func create(ctx context.Context, m modelable) error {
 	}
 
 	model.key = key;
+
+	return nil;
+
 	//if data is cached, create the item in the memcache
-//	data.Print(" ==== MEMCACHE ==== SET IN CREATE FOR data " + data.entityName);
+	//	data.Print(" ==== MEMCACHE ==== SET IN CREATE FOR data " + data.entityName);
 
 //	data.cacheSet();
 
 
 //	data.Print("data " + data.entityName + " successfully created");
-	return nil;
 }
 
 func Create(ctx context.Context, m modelable) error {
-	return create(ctx, m);
+	opts := datastore.TransactionOptions{}
+	opts.XG = true;
+	opts.Attempts = 1;
+	return datastore.RunInTransaction(ctx, func (ctx context.Context) error {
+		return create(ctx, m);
+	}, &opts)
+}
+
+func populate(ctx context.Context, m modelable) error {
+	/*model := m.getModel();
+
+	if model.key == nil {
+		return errors.New(fmt.Sprintf("Can't read struct %s. Model has no key", model.structName));
+	}
+
+	err := datastore.Get(ctx, model.key, model)
+
+	if err != nil {
+		return err;
+	}
+
+	for k, _ := range model.references {
+		ref := model.references[k];
+		populate(ctx, ref);
+	}*/
+
+	return nil
 }
 
 

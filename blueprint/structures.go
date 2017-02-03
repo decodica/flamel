@@ -51,6 +51,12 @@ func mapStructure(t reflect.Type, s *encodedStruct, parentName string) {
 	for i := 0; i < t.NumField(); i++ {
 		field := t.Field(i);
 
+		//skip unexported fields
+		if field.PkgPath != "" {
+			log.Printf("====MAP STRUCT==== skipping unexported field %s", field.Name);
+			continue
+		}
+
 		//skip model mapping in field
 		if field.Type == typeOfModel {
 			continue
@@ -66,12 +72,6 @@ func mapStructure(t reflect.Type, s *encodedStruct, parentName string) {
 		sName := parentName + "." + field.Name
 		sValue := encodedField{index:i}
 
-		//skip unexported fields
-		if field.PkgPath != "" {
-			log.Printf("====MAP STRUCT==== skipping unexported field %s", field.Name);
-			continue
-		}
-
 		log.Printf("====MAP STRUCT==== Processing field %s of struct %s", field.Name, t.Name())
 
 		switch field.Type.Kind() {
@@ -80,7 +80,7 @@ func mapStructure(t reflect.Type, s *encodedStruct, parentName string) {
 			case reflect.Array:
 			continue
 			case reflect.Slice:
-				//todo: se è un array di struct, trattali tutti alla stessa maniera,
+				//todo: se è uno slice di struct, trattali tutti alla stessa maniera,
 				//notifica a GAE che è uno slice usando property.multiple in save/load
 				//pensare a come rappresentare nella mappa uno slice.
 				//todo::if here, nested slice so not supported

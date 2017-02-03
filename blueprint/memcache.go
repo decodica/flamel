@@ -1,5 +1,157 @@
 package blueprint
 
+import (
+	"golang.org/x/net/context"
+	"google.golang.org/appengine/memcache"
+	"google.golang.org/appengine/datastore"
+	"log"
+	"fmt"
+)
+
+type KeyMap map[int]string;
+
+type cacheModel struct {
+	Modelable modelable
+	Keys KeyMap
+}
+
+//checks if cache key is valid
+//as per documentation key max length is set at 250 bytes
+func validCacheKey(key string) bool {
+	bs := []byte(key);
+	valid := len(bs) <= 250;
+	return valid;
+}
+
+//Saves a m representation to GAE memcache
+func saveInMemcache(ctx context.Context, m modelable) (err error) {
+	model := m.getModel();
+
+	if nil == model.key {
+		return fmt.Errorf("No key registered for modelable %s. Can't save in memcache.", model.structName);
+	}
+
+	i := memcache.Item{};
+	i.Key = model.EncodedKey();
+
+	if !validCacheKey(i.Key) {
+		return fmt.Errorf("cacheModel box key %s is too long", i.Key);
+	}
+
+	keyMap := make(KeyMap);
+
+	for k, _ := range model.references {
+		ref := model.references[k];
+		rm := ref.getModel();
+		err = saveInMemcache(ctx, ref);
+
+		if err != nil {
+			return err;
+		}
+
+		if rm.key != nil {
+			keyMap[k] = rm.EncodedKey();
+		}
+	}
+
+	box := cacheModel{Keys:keyMap};
+	i.Object = box;
+
+	log.Printf("Saving modelable %+v to memcache at key %s", m, i.Key);
+
+	err = memcache.Gob.Set(ctx, &i);
+
+	return err;
+}
+
+func loadFromMemcache(ctx context.Context, m modelable) (err error) {
+	model := m.getModel();
+
+	if model.key == nil {
+		return fmt.Errorf("No key registered from modelable %s. Can't load from memcache.", model.structName)
+	}
+
+	cKey := model.EncodedKey();
+	log.Printf("CACHE: Key is %s", cKey);
+	if !validCacheKey(cKey) {
+		return fmt.Errorf("cacheModel box key %s is too long", cKey);
+	}
+
+	box := cacheModel{Keys:make(map[int]string), Modelable:m};
+
+	item, err := memcache.Gob.Get(ctx, cKey, &box);
+
+	log.Printf("RETRIEVED FROM CACHE: %+v", item.Object);
+
+	if err != nil {
+		return err;
+	}
+
+	for k, _ := range model.references {
+		if encodedKey, ok := box.Keys[k]; ok {
+			decodedKey, err := datastore.DecodeKey(encodedKey);
+			if err != nil {
+				return err;
+			}
+			ref := model.references[k];
+			rm := ref.getModel();
+			rm.key = decodedKey;
+			err = loadFromMemcache(ctx, ref);
+		}
+	}
+
+	defer func() {
+		//assign modelable if everything went ok
+		if err == nil {
+			model.modelable = box.Modelable;
+		}
+	}()
+
+	return err;
+}
+
+/*func (data) cacheGet() error {
+	if nil == data.key {
+		return errors.New("Item has no key. Can't retrieve it from memcache");
+	}
+
+	skey := data.key.Encode();
+
+	if !validCacheKey(skey) {
+		panic("Exceeding cache key max capacity - call a system administrator");
+	}
+
+	keyMap := make(map[int]string);
+	cacheBox := &cachePrototype{Keys:keyMap};
+
+	cacheBox.Proto = data.Prototype();
+	_, err := memcache.Gob.Get(data.context, skey, cacheBox);
+
+	if err != nil {
+		return err;
+	}
+
+	data.m = cacheBox.Proto;
+
+	for k, _ := range data.references {
+		if encodedKey, ok := cacheBox.Keys[k]; ok {
+			decodedKey, e := datastore.DecodeKey(encodedKey);
+			if e != nil {
+				panic(e);
+			}
+			ref := data.references[k];
+			ref.key = decodedKey;
+
+			err = ref.read();
+
+			if err != nil {
+				return err;
+			}
+		}
+	}
+	return err;
+}*/
+
 /*import (
 	"reflect"
 	"google.golang.org/appengine/memcache"
@@ -212,10 +364,4 @@ func (data dataMaps) cacheSetMulti(ctx context.Context) error {
 	}
 
 	return err;
-}
-
-//checks if cache key is valid
-func validCacheKey(key string) bool {
-	valid := len(key) <= 250;
-	return valid;
 }*/

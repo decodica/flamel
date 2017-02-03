@@ -260,13 +260,27 @@ func create(ctx context.Context, m modelable) error {
 //	data.Print("data " + data.entityName + " successfully created");
 }
 
-func Create(ctx context.Context, m modelable) error {
+func Create(ctx context.Context, m modelable) (err error) {
+
+	defer func() {
+		if err == nil {
+			//go func() {
+				err = saveInMemcache(ctx, m)
+				if err != nil {
+					panic(err);
+				}
+			//}()
+		}
+	}();
+
 	opts := datastore.TransactionOptions{}
 	opts.XG = true;
 	opts.Attempts = 1;
-	return datastore.RunInTransaction(ctx, func (ctx context.Context) error {
+	err = datastore.RunInTransaction(ctx, func (ctx context.Context) error {
 		return create(ctx, m);
 	}, &opts)
+
+	return err
 }
 
 func ModelableFromID(ctx context.Context, m modelable, id int64) error {
@@ -303,13 +317,25 @@ func populate(ctx context.Context, m modelable) error {
 	return nil
 }
 
-func Populate(ctx context.Context, m modelable) error {
+func Populate(ctx context.Context, m modelable) (err error) {
 	opts := datastore.TransactionOptions{}
 	opts.XG = true;
 	opts.Attempts = 1;
-	return datastore.RunInTransaction(ctx, func (ctx context.Context) error {
+
+	err = loadFromMemcache(ctx, m);
+
+	if err == nil {
+		log.Printf("CACHE HIT: modelable %s loaded from memcache", m.getModel().structName);
+		return err
+	} else {
+		panic(err);
+	}
+
+	err = datastore.RunInTransaction(ctx, func (ctx context.Context) error {
 		return populate(ctx, m);
 	}, &opts)
+
+	return err;
 }
 
 //Creates a new model

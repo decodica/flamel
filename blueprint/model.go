@@ -114,15 +114,34 @@ func (model *Model) setModel(m Model) {
 	*model = m;
 }
 
+//returns -1 if the model doesn't have an id
+//returns the id of the model otherwise
+func (model Model) Id() int64 {
+	if model.key == nil {
+		return -1;
+	}
+
+	return model.key.IntID();
+}
+
+func (model Model) EncodedKey() string {
+	if model.key == nil {
+		return "";
+	}
+
+	return model.key.Encode();
+}
+
 
 //Records the modelable structure into the modelable Model object.
 //See the Gob package analogous method
+//todo: model must also be embedded ?
 func Register(m modelable) error {
 
 	mType := reflect.TypeOf(m).Elem()
 	//retrieve modelable anagraphics
 	obj := reflect.ValueOf(m).Elem()
-	name := obj.Type().Name()
+	name := mType.Name()
 
 	var s structure;
 	//check if the modelable structure has been already mapped
@@ -131,10 +150,12 @@ func Register(m modelable) error {
 	} else {
 		//map the struct
 		s.encodedStruct = newEncodedStruct()
-		s.structName = name;
 		mapStructure(mType, s.encodedStruct, name)
 	}
 
+	s.structName = name;
+
+	//log.Printf("Modelable struct has name %s", s.structName);
 	s.references = make(map[int]modelable)
 	//map the references of the model
 	for i := 0; i < obj.NumField(); i++ {
@@ -224,7 +245,7 @@ func create(ctx context.Context, m modelable) error {
 
 	key, err := datastore.Put(ctx, incompleteKey, m);
 
-	if (err != nil) {
+	if err != nil {
 		return err;
 	}
 
@@ -250,14 +271,23 @@ func Create(ctx context.Context, m modelable) error {
 	}, &opts)
 }
 
+func ModelableFromID(ctx context.Context, m modelable, id int64) error {
+	//first try to retrieve item from memcache
+	model := m.getModel();
+	model.key = datastore.NewKey(ctx, model.structName, "", id, nil);
+	return Populate(ctx, m);
+}
+
+
+//this assumes that the model has a key.
 func populate(ctx context.Context, m modelable) error {
-	/*model := m.getModel();
+	model := m.getModel();
 
 	if model.key == nil {
-		return errors.New(fmt.Sprintf("Can't read struct %s. Model has no key", model.structName));
+		return errors.New(fmt.Sprintf("Can't populate struct %s. Model has no key", model.structName));
 	}
 
-	err := datastore.Get(ctx, model.key, model)
+	err := datastore.Get(ctx, model.key, m)
 
 	if err != nil {
 		return err;
@@ -265,13 +295,24 @@ func populate(ctx context.Context, m modelable) error {
 
 	for k, _ := range model.references {
 		ref := model.references[k];
-		populate(ctx, ref);
-	}*/
+		log.Printf("Populating modelable %+v, reference of modelable %+v", ref, m);
+		err := populate(ctx, ref);
+		if err != nil {
+			return err;
+		}
+	}
 
 	return nil
 }
 
-
+func Populate(ctx context.Context, m modelable) error {
+	opts := datastore.TransactionOptions{}
+	opts.XG = true;
+	opts.Attempts = 1;
+	return datastore.RunInTransaction(ctx, func (ctx context.Context) error {
+		return populate(ctx, m);
+	}, &opts)
+}
 
 //Creates a new model
 //A model is composed of the following properties:
@@ -1020,15 +1061,6 @@ func (model Model) Name() string {
 	return model.entityName;
 }
 
-//returns -1 if the model doesn't have an id
-//returns the id of the model otherwise
-func (model Model) Id() int64 {
-	if model.key == nil {
-		return -1;
-	}
-
-	return model.key.IntID();
-}
 
 func (data dataMap) Prototype() Prototype {
 	return data.m;

@@ -6,7 +6,6 @@ import (
 	"log"
 	"time"
 	"fmt"
-	"strconv"
 	"strings"
 	"google.golang.org/appengine/datastore"
 	"google.golang.org/appengine"
@@ -41,7 +40,7 @@ func newEncodedStruct() *encodedStruct {
 }
 
 func mapStructure(t reflect.Type, s *encodedStruct, parentName string) {
-	log.Printf("====MAP STRUCT==== Analyzing struct of type %s and kind %s",t.Name(), t.Kind());
+	log.Printf("====MAP STRUCT==== Analyzing struct of type %s and kind %s with parent %s",t.Name(), t.Kind(), parentName);
 	if t == typeOfModel || t == typeOfStructure {
 		log.Printf("====MAP STRUCT==== skipping struct of type %s", t.Name());
 		return
@@ -64,7 +63,7 @@ func mapStructure(t reflect.Type, s *encodedStruct, parentName string) {
 
 		tags := strings.Split(field.Tag.Get(tag_domain), ",")
 		tagName := tags[0]
-
+		//todo: skip also datastore skippable data
 		if tagName == tag_skip {
 			continue
 		}
@@ -90,6 +89,7 @@ func mapStructure(t reflect.Type, s *encodedStruct, parentName string) {
 				if _, ok := encodedStructs[field.Type]; ok {
 					log.Printf("!!!Struct of type %s already mapped. Using mapped value %v", field.Type, encodedStructs[field.Type])
 					sValue.childStruct = encodedStructs[field.Type]
+					sValue.childStruct.structName = sName
 					continue
 				}
 
@@ -97,7 +97,7 @@ func mapStructure(t reflect.Type, s *encodedStruct, parentName string) {
 				sMap := make(map[string]encodedField);
 				childStruct := &encodedStruct{structName:sName, fieldNames:sMap};
 				sValue.childStruct = childStruct;
-				mapStructure(field.Type, childStruct, sName);
+				mapStructure(field.Type, childStruct, field.Type.Name());
 			break;
 			case reflect.Ptr:
 				//if we have a pointer we store the value it points to
@@ -107,7 +107,7 @@ func mapStructure(t reflect.Type, s *encodedStruct, parentName string) {
 					sMap := make(map[string]encodedField);
 					childStruct := &encodedStruct{structName:sName, fieldNames:sMap};
 					sValue.childStruct = childStruct;
-					mapStructure(fieldElem, childStruct, sName);
+					mapStructure(fieldElem, childStruct, field.Type.Name());
 					break
 				}
 			fallthrough
@@ -197,7 +197,7 @@ func encodeStruct(s interface{}, props *[]datastore.Property, multiple bool, cod
 					case reflect.Struct:
 						gPrint("==== SAVE ==== encoding struct " + p.Name);
 						if !v.CanAddr() {
-							return fmt.Errorf("datastore: unsupported struct field: value is unaddressable")
+							return fmt.Errorf("datastore: unsupported struct field %s for entity of type %s: value %v is unaddressable",p.Name, sType, v)
 						}
 
 						if field.Type == typeOfTime || field.Type == typeOfGeoPoint {
@@ -213,10 +213,10 @@ func encodeStruct(s interface{}, props *[]datastore.Property, multiple bool, cod
 								continue;
 							}
 							return fmt.Errorf("Inconsistent model. Struct child inequivalence");
-
 						}
 						//if struct, recursively call itself until an error is found
-						return fmt.Errorf("Inconsistent model. Struct values not consistent at index: " + strconv.Itoa(i));
+
+						return fmt.Errorf("FieldName % s not found in %v for Entity of type %s", p.Name, codec.fieldNames, sType);
 				}
 		}
 
@@ -389,6 +389,14 @@ func baseName(name string) string {
 	return name;
 }
 
+func pureName(fullName string) string {
+	lastIndex := strings.LastIndex(fullName, val_serparator);
+	if lastIndex > 0 {
+		return fullName[lastIndex + 1:];
+	}
+	return fullName;
+}
+
 
 func toPropertyList(modelable modelable) ([]datastore.Property, error) {
 
@@ -408,30 +416,26 @@ func toPropertyList(modelable modelable) ([]datastore.Property, error) {
 			continue
 		}
 
-		//_, isProto := value.Field(i).Addr().Interface().(Prototype);
-		//skip datastore skippable flags
 		if field.Tag.Get("datastore") == "-" {
 			continue;
 		}
 
-		//check if field index is a reference
-		//if it is, ref is a data and we can treat it accordingly
-		//todo: we handle this looping OUTSIDE the call
+		p := &datastore.Property{};
+
+		p.Name = sType.Name() + "." + field.Name;
+
 		if rm, ok := model.references[i]; ok {
 			ref := rm.getModel();
 
 			//pass reference types to datastore as *datastore.Key type
-			name := ref_model_prefix + ref.structName;
-			p := datastore.Property{Name:name, Value:ref.key};
-			props = append(props, p);
+		//	name := ref_model_prefix + ref.structName;
+			//p := datastore.Property{Name:name, Value:ref.key};
+			p.Value = ref.key;
+			props = append(props, *p);
 			continue
 		}
 
 		v := value.Field(i);
-
-		p := &datastore.Property{};
-
-		p.Name = sType.Name() + "." + field.Name;
 
 		switch x := v.Interface().(type) {
 		case time.Time:
@@ -497,7 +501,8 @@ func toPropertyList(modelable modelable) ([]datastore.Property, error) {
 func fromPropertyList(modelable modelable, props []datastore.Property) error {
 
 	//get the underlying prototype
-	//value := reflect.ValueOf(modelable).Elem();
+	value := reflect.ValueOf(modelable).Elem();
+	sType := value.Type();
 	model := modelable.getModel();
 
 	for _, p := range props {
@@ -505,8 +510,27 @@ func fromPropertyList(modelable modelable, props []datastore.Property) error {
 		//var field reflect.Value;
 		//check if prop is in data base struct
 		//log.gPrint("==== LOAD MODEL ==== Field of prop " + p.Name + " HAS KIND: " + field.Kind().String());
+		log.Printf("==== LOAD MODEL ==== Reading prop with name %s", p.Name)
 
-		//LOAD FIRST LEVEL VALUES (EITHER VALUES OR REFERENCES OR INVALID)
+		//if we have a reference
+		if key, ok := p.Value.(*datastore.Key); ok {
+			log.Printf("Found datastore.key for field %s", p.Name);
+			/*for i := 0; i < sType.NumField(); i++ {
+				f := sType.Field(i);
+				log.Printf("Struct of type %s has field with name %s.", sType, f.Name)
+			}*/
+
+			if field, ok := sType.FieldByName(pureName(p.Name)); ok {
+				//Note: understand what is the deal with []int in index field.
+				ref := model.references[field.Index[0]];
+				rm := ref.getModel();
+				rm.key = key;
+				continue
+			}
+			return fmt.Errorf("No reference found at name %s for type %s. PureName is %s", p.Name, sType, pureName(p.Name));
+		}
+
+		//load first level values.
 		if attr, ok := model.fieldNames[p.Name]; ok {
 
 			/*if (attr.isReference) {
@@ -536,22 +560,19 @@ func fromPropertyList(modelable modelable, props []datastore.Property) error {
 				continue
 			}*/
 
-			//plain value case:
+			//decode the field if its a plain value (no struct, no pointer, no slice, not sure about map)
 			if attr.childStruct == nil {
-				//if its a plain value (i.e. not belonging to a referenced struct)
-				//decode the field
 				err := model.decodeField(reflect.ValueOf(modelable), p, attr);
 				if nil != err {
-					panic(err);
+					return err;
 				}
 				continue;
 			}
-			panic("==== LOAD MODEL ==== Unconsistent data - can't have a first level struct that is not a reference or time or ...");
 		}
 
 		//if is not in the first level get the first level name
-		firstLevelName := strings.Split(p.Name, ".")[0];
-		if attr, ok := model.fieldNames[firstLevelName]; ok {
+		//firstLevelName := strings.Split(p.Name, ".")[0];
+		if attr, ok := model.fieldNames[pureName(p.Name)]; ok {
 			//v := reflect.ValueOf(modelable).Elem();
 			//field := v.Field(attr.index);
 			//data.Print("==== LOAD MODEL ==== NESTED FIELD OF KIND " + field.Kind().String() + " FOR PROPERTY "  + p.Name );
@@ -559,8 +580,10 @@ func fromPropertyList(modelable modelable, props []datastore.Property) error {
 			err := model.decodeField(reflect.ValueOf(modelable), p, attr);
 
 			if nil != err {
-				panic(err);
+				return err;
 			}
+		} else {
+			log.Printf("Field with name %s not found for struct of type %s", pureName(p.Name), sType);
 		}
 	}
 

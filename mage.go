@@ -10,12 +10,12 @@ import (
 	"google.golang.org/appengine/file"
 	"google.golang.org/appengine/image"
 	"google.golang.org/appengine/memcache"
-	"distudio.com/mage/blueprint"
+	"distudio.com/mage/model"
 )
 
 type mage struct {
 	//user factory
-	createUser     func() blueprint.Authenticable
+	createUser     func() model.Authenticable
 	Config         MageConfig
 	app            Application
 	applicationSet bool
@@ -134,7 +134,7 @@ func MageInstance() *mage {
 	return mageInstance
 }
 
-func (mage *mage) SetAuthenticableFactory(factory func() blueprint.Authenticable) {
+func (mage *mage) SetAuthenticableFactory(factory func() model.Authenticable) {
 	mage.createUser = factory
 }
 

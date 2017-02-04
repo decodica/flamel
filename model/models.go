@@ -1,4 +1,4 @@
-package blueprint
+package model
 
 /*import "google.golang.org/appengine/datastore"
 

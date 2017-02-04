@@ -8,24 +8,24 @@ import (
 	"io/ioutil"
 	"google.golang.org/appengine"
 	"google.golang.org/appengine/blobstore"
-	"distudio.com/mage/blueprint"
+	"distudio.com/mage/model"
 )
 
 type RequestInputs map[string]requestInput;
 
 
 type magePage struct {
-	query  RequestInputs
-	page   Page
-	currentUser blueprint.Authenticable
-	out *RequestOutput;
+	query       RequestInputs
+	page        Page
+	currentUser model.Authenticable
+	out         *RequestOutput;
 }
 
 type Page interface {
 	//todo:: OnCreate(context and input)
 	//todo: remove draw
 
-	OnCreate(user blueprint.Authenticable);
+	OnCreate(user model.Authenticable);
 	Draw() interface{};
 	Build(in RequestInputs);
 	Process(out *RequestOutput);
@@ -36,7 +36,7 @@ type Page interface {
 	OnFinish();
 }
 
-func newGaemsPage(page Page, user blueprint.Authenticable) *magePage {
+func newGaemsPage(page Page, user model.Authenticable) *magePage {
 	p := &magePage{page:page, currentUser:user};
 	page.OnCreate(p.currentUser);
 	return p;

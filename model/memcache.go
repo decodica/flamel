@@ -1,4 +1,4 @@
-package blueprint
+package model
 
 import (
 	"golang.org/x/net/context"
@@ -6,6 +6,7 @@ import (
 	"google.golang.org/appengine/datastore"
 	"log"
 	"fmt"
+	"reflect"
 )
 
 type KeyMap map[int]string;
@@ -55,11 +56,16 @@ func saveInMemcache(ctx context.Context, m modelable) (err error) {
 	}
 
 	box := cacheModel{Keys:keyMap};
+	box.Modelable = m;
 	i.Object = box;
 
 	log.Printf("Saving modelable %+v to memcache at key %s", m, i.Key);
 
 	err = memcache.Gob.Set(ctx, &i);
+
+	if err != nil {
+		panic(err);
+	}
 
 	return err;
 }
@@ -72,16 +78,22 @@ func loadFromMemcache(ctx context.Context, m modelable) (err error) {
 	}
 
 	cKey := model.EncodedKey();
-	log.Printf("CACHE: Key is %s", cKey);
 	if !validCacheKey(cKey) {
 		return fmt.Errorf("cacheModel box key %s is too long", cKey);
 	}
 
 	box := cacheModel{Keys:make(map[int]string), Modelable:m};
 
-	item, err := memcache.Gob.Get(ctx, cKey, &box);
+	_, err = memcache.Gob.Get(ctx, cKey, &box);
 
-	log.Printf("RETRIEVED FROM CACHE: %+v", item.Object);
+	//check for type equality
+	if reflect.TypeOf(box.Modelable) != reflect.TypeOf(m) {
+		return fmt.Errorf("Memcache found incompatible type for model: " +
+			"cached type was %s but %s was requested",
+			reflect.TypeOf(box.Modelable).Name(),
+			reflect.TypeOf(m).Name());
+
+	}
 
 	if err != nil {
 		return err;
@@ -101,9 +113,21 @@ func loadFromMemcache(ctx context.Context, m modelable) (err error) {
 	}
 
 	defer func() {
-		//assign modelable if everything went ok
+		//if there are no error we assign the value recovered from memcache to the modelable
 		if err == nil {
-			model.modelable = box.Modelable;
+			modValue := reflect.ValueOf(*model);
+			dstValue := reflect.Indirect(reflect.ValueOf(m));
+			srcValue := reflect.Indirect(reflect.ValueOf(box.Modelable))
+			dstValue.Set(srcValue);
+			//set model to the modelable Model Field
+			for i := 0; i < dstValue.NumField(); i++ {
+				field := dstValue.Field(i);
+				fieldType := field.Type();
+				if fieldType == typeOfModel {
+					field.Set(modValue);
+					break;
+				}
+			}
 		}
 	}()
 

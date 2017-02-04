@@ -1,23 +1,16 @@
-package blueprint
+package model
 
 import (
 	"google.golang.org/appengine/datastore"
-//	"errors"
 	"google.golang.org/appengine"
 	"reflect"
 	"time"
-//	"fmt"
-//	"google.golang.org/appengine/memcache"
-//	"encoding/gob"
-//	"google.golang.org/appengine/search"
-//	"strings"
 	"golang.org/x/net/context"
-//	"google.golang.org/appengine/log"
-//	"sync"
 	"log"
 	"fmt"
 	"errors"
 	"strings"
+	"encoding/gob"
 )
 
 var (
@@ -50,6 +43,9 @@ type modelable interface {
 }
 
 type Model struct {
+	//Note: this is necessary to allow simple implementation of memcache encoding and coding
+	//else we get the all unexported fields error from Gob package
+	Writable bool `model:"-"`
 	//*dataMap
 	/*search.FieldLoadSaver
 	searchQuery string
@@ -63,7 +59,6 @@ type Model struct {
 
 	//the embedding modelable
 	modelable modelable `model:"-"`
-
 }
 
 type structure struct {
@@ -135,6 +130,10 @@ func (model Model) EncodedKey() string {
 //Records the modelable structure into the modelable Model object.
 //See the Gob package analogous method
 //todo: model must also be embedded ?
+func (model Model) Init() error {
+	return Register(model.modelable);
+}
+
 func Register(m modelable) error {
 
 	mType := reflect.TypeOf(m).Elem()
@@ -197,7 +196,7 @@ func Register(m modelable) error {
 
 	model := Model{structure: &s}
 	model.modelable = m;
-
+	gob.Register(model.modelable);
 	m.setModel(model)
 	log.Printf("Mapped modelable of type %s: %+v", mType, m)
 	log.Printf("Fields are %+v", model.fieldNames)
@@ -325,10 +324,7 @@ func Populate(ctx context.Context, m modelable) (err error) {
 	err = loadFromMemcache(ctx, m);
 
 	if err == nil {
-		log.Printf("CACHE HIT: modelable %s loaded from memcache", m.getModel().structName);
 		return err
-	} else {
-		panic(err);
 	}
 
 	err = datastore.RunInTransaction(ctx, func (ctx context.Context) error {

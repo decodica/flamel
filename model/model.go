@@ -68,23 +68,6 @@ type structure struct {
 	references map[int]modelable
 }
 
-type dataMap struct {
-	context    context.Context
-
-	entityName string
-	m          Prototype
-	//references maps the field index with the prototype struct
-	references map[int]*Model
-	//values maps field indices with structs values
-	values     map[string]encodedField
-	datastore.PropertyLoadSaver
-	//datastore query state
-	query      *datastore.Query
-//	propertyLoader
-	Debug bool
-	loadRef bool
-}
-
 type Prototype interface {
 	datastorable
 }
@@ -95,8 +78,6 @@ type datastorable interface {
 	update() error
 	delete() error
 }
-
-var encodedStructs = map[reflect.Type]*encodedStruct{}
 
 //Model satisfies modelable
 //Returns the current Model.
@@ -411,8 +392,6 @@ func Read(ctx context.Context, m modelable) (err error) {
 	return err;
 }
 
-
-//TODO: CLONE MODEL TO KEEP OPTIONS ACTIVE BETWEEN POINTER SUBSTITUTION
 /*
 func nameOfModelable(m modelable) string {
 	return reflect.ValueOf(m).Elem().Type().String();
@@ -420,103 +399,6 @@ func nameOfModelable(m modelable) string {
 
 func makeRefname(base string) string {
 	return ref_model_prefix + base;
-}
-
-func (data *dataMap) create() error {
-	if (data.key != nil) {
-		return errors.New("data has already been created");
-	}
-
-	incompleteKey := datastore.NewIncompleteKey(data.context, data.entityName, nil);
-
-	key, err := datastore.Put(data.context, incompleteKey, data);
-
-	if (err != nil) {
-		return err;
-	}
-
-	data.key = key;
-	//if data is cached, create the item in the memcache
-	data.Print(" ==== MEMCACHE ==== SET IN CREATE FOR data " + data.entityName);
-
-	data.cacheSet();
-
-
-	data.Print("data " + data.entityName + " successfully created");
-	return nil;
-}
-
-func (model *Model) Create() error {
-	var e error;
-	if model.key != nil {
-		return errors.New("Model has already been created");
-	}
-
-	e = model.dataMap.create();
-
-	if nil == e && model.searchable {
-		model.Index();
-	}
-
-	return e;
-}
-
-
-//todo: move reads from memcache/struct property load to this method. foreach ref, read it
-func (data *dataMap) read() error {
-	if (data.key == nil) {
-		return errors.New("Can't load data withouth specifying which");
-	}
-
-
-	err := data.cacheGet();
-	if nil == err {
-		data.Print(" ==== MEMCACHE ==== READ: CACHE HIT FOR data " + data.entityName);
-		return nil;
-	}
-
-
-	err = datastore.Get(data.context, data.key, data);
-
-	data.Print(" ==== MEMCACHE ==== SET IN READ FOR data " + data.entityName);
-	if nil == err {
-		//didn't found the item. Put it into memcache anyhow
-		data.cacheSet();
-	}
-
-	return err;
-}
-
-func (data *dataMap) update() error {
-	if (data.key == nil) {
-		return errors.New("Can't save a data that hasn't been loaded or created");
-	}
-
-	_, err := datastore.Put(data.context, data.key, data);
-
-	if (nil != err) {
-		return err;
-	}
-
-	data.Print(" ==== MEMCACHE ==== SET IN UPDATE FOR data " + data.entityName);
-
-	data.cacheSet();
-
-	//if item was
-	data.Print("data " + data.entityName + " succesfully saved");
-
-	return err;
-}
-
-func (model *Model) Update() error {
-
-	e := model.dataMap.update();
-
-	if nil == e && model.searchable{
-		model.Index();
-	}
-
-	return e;
 }
 
 //also sets the model to nil

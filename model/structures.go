@@ -39,6 +39,13 @@ func newEncodedStruct() *encodedStruct {
 	return &encodedStruct{"",mp}
 }
 
+//Keeps track of encoded structs according to their reflect.Type.
+//It is used as a cache to avoid to map structs that have been already mapped
+var encodedStructs = map[reflect.Type]*encodedStruct{}
+
+
+//maps a structure into a linked list representation of its fields.
+//It is used to ease the conversion between the Model framework and the datastore
 func mapStructure(t reflect.Type, s *encodedStruct, parentName string) {
 	log.Printf("====MAP STRUCT==== Analyzing struct of type %s and kind %s with parent %s",t.Name(), t.Kind(), parentName);
 	if t == typeOfModel || t == typeOfStructure {

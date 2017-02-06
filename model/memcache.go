@@ -26,7 +26,12 @@ func validCacheKey(key string) bool {
 
 //Saves a m representation to GAE memcache
 func saveInMemcache(ctx context.Context, m modelable) (err error) {
+	//skip unregistered models
 	model := m.getModel();
+
+	if !model.Registered {
+		return nil;
+	}
 
 	if nil == model.key {
 		return fmt.Errorf("No key registered for modelable %s. Can't save in memcache.", model.structName);
@@ -72,6 +77,9 @@ func saveInMemcache(ctx context.Context, m modelable) (err error) {
 
 func loadFromMemcache(ctx context.Context, m modelable) (err error) {
 	model := m.getModel();
+	if !model.Registered {
+		return nil;
+	}
 
 	if model.key == nil {
 		return fmt.Errorf("No key registered from modelable %s. Can't load from memcache.", model.structName)

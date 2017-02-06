@@ -3,6 +3,7 @@ package model
 import (
 	"google.golang.org/appengine/datastore"
 	"google.golang.org/appengine"
+	gaelog "google.golang.org/appengine/log"
 	"reflect"
 	"time"
 	"golang.org/x/net/context"
@@ -45,7 +46,7 @@ type modelable interface {
 type Model struct {
 	//Note: this is necessary to allow simple implementation of memcache encoding and coding
 	//else we get the all unexported fields error from Gob package
-	Writable bool `model:"-"`
+	Registered bool `model:"-"`
 	//*dataMap
 	/*search.FieldLoadSaver
 	searchQuery string
@@ -127,14 +128,11 @@ func (model Model) EncodedKey() string {
 }
 
 
-//Records the modelable structure into the modelable Model object.
-//See the Gob package analogous method
-//todo: model must also be embedded ?
-func (model Model) Init() error {
-	return Register(model.modelable);
-}
-
-func Register(m modelable) error {
+//Registers m and its references to work with the model framework.
+//Calling Create, Update or Read on an unregistered modelable causes a panic
+//Registered references are always read and written from/to the datastore.
+//Unregistered references won't be written to/read from the datastore.
+func Register(m modelable) {
 
 	mType := reflect.TypeOf(m).Elem()
 	//retrieve modelable anagraphics
@@ -143,6 +141,7 @@ func Register(m modelable) error {
 
 	var s structure;
 	//check if the modelable structure has been already mapped
+
 	if enStruct, ok := encodedStructs[mType]; ok {
 		s.encodedStruct = enStruct;
 	} else {
@@ -180,28 +179,27 @@ func Register(m modelable) error {
 		if obj.Field(i).Kind() == reflect.Struct {
 
 			if !obj.Field(i).CanAddr() {
-				return fmt.Errorf("Unaddressable reference %v in Model", obj.Field(i))
+				panic(fmt.Errorf("Unaddressable reference %v in Model", obj.Field(i)));
 			}
 
 			if reference, ok := obj.Field(i).Addr().Interface().(modelable); ok {
 				//we register the modelable
-				err := Register(reference)
-				if nil != err {
-					return err
-				}
+				Register(reference)
 				s.references[i] = reference
 			}
 		}
 	}
 
-	model := Model{structure: &s}
-	model.modelable = m;
-	gob.Register(model.modelable);
-	m.setModel(model)
-	log.Printf("Mapped modelable of type %s: %+v", mType, m)
-	log.Printf("Fields are %+v", model.fieldNames)
+	if !m.getModel().Registered {
+		model := Model{structure: &s}
+		model.modelable = m;
+		model.Registered = true;
+		m.setModel(model)
+		gob.Register(model.modelable);
+	}
 
-	return nil
+	//log.Printf("Fields are %+v", model.fieldNames)
+
 }
 
 func (model *Model) Save() ([]datastore.Property, error) {
@@ -220,21 +218,9 @@ func create(ctx context.Context, m modelable) error {
 		return errors.New("data has already been created");
 	}
 
-	//first create references and get the keys
-	for k, _ := range model.references {
-		ref := model.references[k];
-		refModel := ref.getModel();
-		log.Printf(">>>>> Creating reference %v ", ref)
-		if refModel.key == nil {
-			err := create(ctx, ref);
-			if err != nil {
-				log.Printf("Transaction for reference failed with error %s", err.Error())
-				return err;
-			}
-
-		} else {
-			//todo: update
-		}
+	err := createOrUpdateReferences(ctx, model);
+	if err != nil {
+		return err;
 	}
 
 	incompleteKey := datastore.NewIncompleteKey(ctx, model.structName, nil);
@@ -249,26 +235,74 @@ func create(ctx context.Context, m modelable) error {
 	model.key = key;
 
 	return nil;
-
-	//if data is cached, create the item in the memcache
-	//	data.Print(" ==== MEMCACHE ==== SET IN CREATE FOR data " + data.entityName);
-
-//	data.cacheSet();
-
-
-//	data.Print("data " + data.entityName + " successfully created");
 }
 
+func update(ctx context.Context, m modelable) error {
+	model := m.getModel();
+
+	if model.key == nil {
+		return fmt.Errorf("Can't update modelable %v. Missing key", m);
+	}
+
+	err := createOrUpdateReferences(ctx, model);
+	if err != nil {
+		return err;
+	}
+
+	key, err := datastore.Put(ctx, model.key, m);
+
+	if err != nil {
+		return err;
+	}
+
+	model.key = key;
+
+	return nil;
+}
+
+
+//creates or updates references of model model.
+//if one of the reference is not registered it is skipped.
+//Only registered references can be saved
+func createOrUpdateReferences(ctx context.Context, model *Model) error {
+	for k, _ := range model.references {
+		ref := model.references[k];
+		refModel := ref.getModel();
+		if refModel.key == nil {
+			if refModel.Registered {
+				err := create(ctx, ref);
+				if err != nil {
+					gaelog.Errorf(ctx, "Transaction failed when creating reference %s. Error %s", model.structName, err.Error())
+					return err;
+				}
+			}
+		} else {
+			err := update(ctx, ref);
+			if err != nil {
+				gaelog.Errorf(ctx, "Transaction failed when updating reference %s. Error %s", model.structName, err.Error())
+				return err
+			}
+		}
+	}
+
+	return nil;
+}
+
+//Reads data from a modelable and writes it to the datastore as an entity with a new key.
+//m must be registered or it will cause a panic.
+//If m has unregistered references they will be skipped and won't be written to the datastore,
 func Create(ctx context.Context, m modelable) (err error) {
+	if !m.getModel().Registered {
+		err = fmt.Errorf("Called create on unregistered model for modelable %v", m);
+		panic(err);
+	}
 
 	defer func() {
 		if err == nil {
-			//go func() {
-				err = saveInMemcache(ctx, m)
-				if err != nil {
-					panic(err);
-				}
-			//}()
+			err = saveInMemcache(ctx, m)
+			if err != nil {
+				gaelog.Errorf(ctx, "Error saving items in memcache: %v", err);
+			}
 		}
 	}();
 
@@ -279,19 +313,52 @@ func Create(ctx context.Context, m modelable) (err error) {
 		return create(ctx, m);
 	}, &opts)
 
+	return err;
+}
+
+//Reads data from a modelable and writes it into the corresponding entity of the datastore.
+//If m is unregistered it will panic
+//In update operations unregistered references won't overwrite previous stored values.
+//As an example registering a modelable, change its reference, register the modelable again and
+// calling Update will cause references to be written twice: one for the first registered ref and the other for the updated reference.
+func Update(ctx context.Context, m modelable) (err error) {
+	if !m.getModel().Registered {
+		err = fmt.Errorf("Called Update on unregistered model for modelable %v", m);
+		panic(err);
+	}
+
+	defer func() {
+		if err == nil {
+			err = saveInMemcache(ctx, m)
+			if err != nil {
+				gaelog.Errorf(ctx, "Error saving items in memcache: %v", err);
+			}
+		}
+	}();
+
+	opts := datastore.TransactionOptions{}
+	opts.XG = true;
+	opts.Attempts = 1;
+	err = datastore.RunInTransaction(ctx, func (ctx context.Context) error {
+		return update(ctx, m);
+	}, &opts)
+
 	return err
 }
 
+//Loads values from the datastore for the entity with the given id.
+//Entity types must be the same with m and the entity whos id is id
 func ModelableFromID(ctx context.Context, m modelable, id int64) error {
 	//first try to retrieve item from memcache
 	model := m.getModel();
+	if !model.Registered {
+		Register(m);
+	}
 	model.key = datastore.NewKey(ctx, model.structName, "", id, nil);
-	return Populate(ctx, m);
+	return Read(ctx, m);
 }
 
-
-//this assumes that the model has a key.
-func populate(ctx context.Context, m modelable) error {
+func read(ctx context.Context, m modelable) error {
 	model := m.getModel();
 
 	if model.key == nil {
@@ -307,7 +374,7 @@ func populate(ctx context.Context, m modelable) error {
 	for k, _ := range model.references {
 		ref := model.references[k];
 		log.Printf("Populating modelable %+v, reference of modelable %+v", ref, m);
-		err := populate(ctx, ref);
+		err := read(ctx, ref);
 		if err != nil {
 			return err;
 		}
@@ -316,7 +383,17 @@ func populate(ctx context.Context, m modelable) error {
 	return nil
 }
 
-func Populate(ctx context.Context, m modelable) (err error) {
+//Reads data from the datastore and writes them into the modelable.
+//Writing into a modelable can happen only if the modelable is registered.
+//If m is unregistered it will panic
+//Unregistered modelables and all their references are skipped.
+// This allows for reading partial modelable from the datastore.
+func Read(ctx context.Context, m modelable) (err error) {
+	if !m.getModel().Registered {
+		err = fmt.Errorf("Called Update on unregistered model for modelable %v", m);
+		panic(err);
+	}
+
 	opts := datastore.TransactionOptions{}
 	opts.XG = true;
 	opts.Attempts = 1;
@@ -328,193 +405,15 @@ func Populate(ctx context.Context, m modelable) (err error) {
 	}
 
 	err = datastore.RunInTransaction(ctx, func (ctx context.Context) error {
-		return populate(ctx, m);
+		return read(ctx, m);
 	}, &opts)
 
 	return err;
 }
 
-//Creates a new model
-//A model is composed of the following properties:
-//- references: prototypes are considered references. They are structs
-// that implement the Modelable interface.
-//references are saved as keys in the containing struct model and as different entities
-//- values: they are values of the model. They can also be nested structs
-//Values are saved as containing structs properties, with a Nested.Struct name
-/*func NewModel(c context.Context, m Prototype) (*Model, error) {
-
-	//get the prototype struct name
-	name := nameOfPrototype(m);
-
-	prototypeValue := reflect.ValueOf(m).Elem();
-
-	references := make(map[int]*Model);
-	values := make(map[string]encodedField);
-
-	searchable := false;
-	//traverse the struct fields and check if a field is a reference
-	for i := 0; i < prototypeValue.NumField(); i++ {
-
-		field := prototypeValue.Field(i);
-		fieldType := prototypeValue.Type().Field(i);
-
-		sName := fieldType.Name;
-		valueField := encodedField{index:i};
-
-		tagName, _ := fieldType.Tag.Get(tag_domain), "";
-		if i := strings.Index(name, ","); i != -1 {
-			tagName, _ = name[:i], name[i + 1:];
-		}
-
-		//log.Printf("NAME: " + tagName + ", TAGS: %v", tags);
-
-		//if at least one field is tagged for search, flag the model as searchable
-
-		if tagName == tag_search {
-			searchable = true;
-			gPrint("MODEL " + name + " IS SEARCHABLE");
-		}
-
-		switch field.Kind() {
-		case reflect.Slice:
-
-			//se slice di struct, prendi il tipo di struct ed encodalo
-			if field.Type().Elem().Kind() != reflect.Struct {
-				break;
-			}
-
-			elem := fieldType.Type.Elem();
-			gPrintf("Slice proto: %+v", elem);
-			//for now consider only value and not arrays of reference structs
-			sMap := make(map[string]encodedField);
-
-			childStruct := &encodedStruct{structName:sName, fieldNames:sMap}
-			valueField.childStruct = childStruct;
-
-			//encode the child struct
-			mapValueStruct(elem, childStruct, sName);
-
-		//if a field is a struct, check if it implements the modelable interface.
-		//if it does, treat it as a reference
-		case reflect.Struct:
-			if !field.CanAddr() {
-				return nil, fmt.Errorf("datastore: unsupported struct field: value is unaddressable")
-			}
-
-			//check if struct is of type time or value
-			if fieldType.Type == typeOfTime || fieldType.Type == typeOfGeoPoint {
-				break;
-			}
-
-			//if reference, use the value to create and assign a new model
-			//don't map the struct, the ref model will handle that
-			reference, ok := field.Addr().Interface().(Prototype);
-
-			if ok {
-				//log.gPrint("==== NEW MODEL==== Found a reference at index " + strconv.Itoa(i) + ": " + field.String());
-				refModel, err := NewModel(c, reference);
-				if nil != err {
-					panic("Can't create reference model")
-				}
-				references[i] = refModel;
-				//put the struct into the values array and flag it as a reference
-				values[makeRefname(refModel.entityName)] = valueField;
-				continue;
-			}
-
-			//else it is a value, take note of this sub-struct
-			sMap := make(map[string]encodedField);
-
-			//instantiate the encoded struct
-			childStruct := &encodedStruct{structName:sName, fieldNames:sMap}
-
-			valueField.childStruct = childStruct;
-
-			//encode the child struct
-			mapValueStruct(fieldType.Type, childStruct, sName);
-			//add the mapped struct to the value ,map
-
-			//log.gPrint("==== NEW MODEL ===== FOUND VALUE STRUCT AT INDEX " + strconv.Itoa(i) + " WITH NAME: " + sName);
-			//log.gPrint(values);
-			break;
-		case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
-			fallthrough
-		case reflect.Bool:
-			fallthrough
-		case reflect.String:
-			fallthrough
-		case reflect.Float32, reflect.Float64:
-			fallthrough
-		default:
-			break;
-
-		}
-		values[sName] = valueField;
-
-	}
-
-	//log.gPrint("==== NEW MODEL==== BUILT MODEL FOR ENTITY " + name );
-	//register type for memcache
-	gob.Register(m);
-	data := &dataMap{context:c, m:m, entityName:name, references:references, values:values, loadRef: true};
-	return &Model{dataMap:data, searchable:searchable}, nil;
-}
-
 
 //TODO: CLONE MODEL TO KEEP OPTIONS ACTIVE BETWEEN POINTER SUBSTITUTION
-
-func (model *Model) SetReference(ref Model) error {
-	refName := makeRefname(ref.entityName);
-	s, ok := model.values[refName];
-
-	if !(ok && s.isReference) {
-		return errors.New("Struct not found for name " + refName);
-	}
-
-	_, ok = model.references[s.index];
-
-	if !ok {
-		return errors.New("Reference with name " + refName + " not found.");
-	}
-
-	//if the reference is found and it is valid,
-	//update the main struct values
-	protoValue := reflect.ValueOf(model.Prototype()).Elem();
-	refProto := ref.Prototype();
-	//this works since only structs are supported as references
-	//todo:support slices as well
-	protoValue.Field(s.index).Set(reflect.ValueOf(refProto).Elem());
-
-	model.references[s.index] = &ref;
-
-	return nil;
-}
-
-func (model *Model) GetReference(name string) (*Model, error) {
-	refName := makeRefname(name);
-	s, ok := model.values[refName];
-
-	if !(ok && s.isReference) {
-		return nil, errors.New("Reference not found for name " + refName);
-	}
-
-	ref, ok := model.references[s.index];
-
-	if !ok {
-		return nil, errors.New("Reference not found for name " + refName);
-	}
-
-	return ref, nil;
-}
-
-func (data *dataMap) Save() ([]datastore.Property, error) {
-	return data.toPropertyList();
-}
-
-func (data *dataMap) Load(props []datastore.Property) error {
-	return data.fromPropertyList(props);
-}
-
+/*
 func nameOfModelable(m modelable) string {
 	return reflect.ValueOf(m).Elem().Type().String();
 }

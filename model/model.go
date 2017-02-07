@@ -100,6 +100,11 @@ func (model Model) Id() int64 {
 	return model.key.IntID();
 }
 
+//Returns the name of the modelable this model refers to
+func (model Model) Name() string {
+	return model.structName;
+}
+
 func (model Model) EncodedKey() string {
 	if model.key == nil {
 		return "";
@@ -166,6 +171,7 @@ func Register(m modelable) {
 			if reference, ok := obj.Field(i).Addr().Interface().(modelable); ok {
 				//we register the modelable
 				Register(reference)
+				//here the reference is registered
 				s.references[i] = reference
 			}
 		}
@@ -175,11 +181,10 @@ func Register(m modelable) {
 		model := Model{structure: &s}
 		model.modelable = m;
 		model.Registered = true;
+		model.key = m.getModel().key;
 		m.setModel(model)
 		gob.Register(model.modelable);
 	}
-
-	//log.Printf("Fields are %+v", model.fieldNames)
 
 }
 
@@ -438,36 +443,6 @@ func (model *Model) Delete() error {
 	return e;
 }
 
-func (data *dataMap) AllOf() ([]Model, error) {
-
-	prototype := data.Prototype();
-	data.query = datastore.NewQuery(nameOfPrototype(prototype));
-
-	limit := default_entry_count_per_read_batch;
-
-	var models []Model;
-
-	var cursor *datastore.Cursor;
-	var e error;
-
-	done := false;
-	for !done {
-
-		data.query = data.query.Limit(limit);
-
-		if cursor != nil {
-			data.query = data.query.Start(*cursor);
-		}
-
-		cursor, e = data.get(&models);
-
-		done = e == datastore.Done;
-	}
-
-	data.query = nil;
-	return models, nil;
-}
-
 //retrieves up to datastore limits (currently 1000) entities from either memcache or datastore
 //each datamap must have the key already set
 func (data dataMaps) readMulti(ctx context.Context) {
@@ -682,186 +657,6 @@ func (data *dataMap) GetMulti() ([]Model, error) {
 
 	return res, nil;
 }
-
-
-func (data *dataMap) Get() ([]Model, error) {
-
-	if (data.query == nil) {
-		return nil, errors.New("Can't get unspecified models.");
-	}
-
-	data.query = data.query.KeysOnly();
-
-	var models []Model;
-
-	_, e := data.get(&models);
-
-	if e != nil && e != datastore.Done {
-		return models, e;
-	}
-
-	//data.Print("DONE RECOVERING ITEMS. FOUND " + strconv.Itoa(rc) + " ITEMS FOR ENTITY " + data.entityName);
-	//log.Printf("GET CALLED. Models: %+v", models);
-	data.query = nil;
-	return models, nil;
-}
-
-func (data *dataMap) get(models *[]Model) (*datastore.Cursor, error) {
-
-	prototype := data.Prototype();
-	mType := reflect.ValueOf(prototype).Elem().Type();
-
-	more := false;
-	rc := 0;
-	it := data.query.Run(data.context);
-	for {
-
-		key, err := it.Next(nil);
-
-		if (err == datastore.Done) {
-			break;
-		}
-
-		if err != nil {
-			return nil, err;
-		}
-
-		dst := reflect.New(mType);
-		val, ok := dst.Interface().(Prototype);
-
-		if !ok {
-			data.query = nil;
-			return nil, errors.New("Can't cast interface to Prototype");
-		}
-
-		more = true;
-
-		model, err := NewModel(data.context, val);
-
-		//log.Printf("RUNNING QUERY %v FOR MODEL " + data.entityName + " - FOUND ITEM WITH KEY: " + strconv.Itoa(int(key.IntID())), data.query);
-
-		if (err != nil) {
-			data.query = nil;
-			return nil, err;
-		}
-
-		model.key = key;
-
-		err = model.read();
-
-		if (err != nil) {
-			data.query = nil;
-			return nil, err;
-		}
-
-		*models = append(*models, *model);
-		rc++;
-	}
-
-	if !more {
-		//if there are no more entries to be loaded, break the loop
-		return nil, datastore.Done;
-	} else {
-		//else, if we still have entries, update cursor position
-		cursor, e := it.Cursor();
-
-		return &cursor, e;
-	}
-}
-
-//convenience method to retrieve first occurrence of model after a get
-func (model *Model) First() error {
-
-	mods, err := model.Get();
-
-	if err != nil {
-		return err;
-	}
-
-	for _, v := range mods {
-		*model = v;
-		return nil;
-	}
-
-	return datastore.ErrNoSuchEntity;
-}
-
-func (model *Model) With(filter string, value interface{}) {
-	dq := model.query;
-	//initialize query if not initialized
-	if nil == dq {
-		dq = datastore.NewQuery(nameOfPrototype(model.Prototype()));
-	}
-
-	dq = dq.Filter(filter, value);
-	model.query = dq;
-}
-
-func (model *Model) OrderBy(fieldName string) {
-	dq := model.query;
-	if nil == dq {
-		dq = datastore.NewQuery(nameOfPrototype(model.Prototype()));
-	}
-
-	dq = dq.Order(fieldName);
-	model.query = dq;
-}
-
-func (model *Model) OffsetBy(offset int) {
-	dq := model.query;
-	if nil == dq {
-		dq = datastore.NewQuery(nameOfPrototype(model.Prototype()));
-	}
-
-	dq = dq.Offset(offset);
-	model.query = dq;
-}
-
-func (model *Model) Limit(limit int) {
-	dq := model.query;
-	if nil == dq {
-		dq = datastore.NewQuery(nameOfPrototype(model.Prototype()));
-	}
-
-	dq = dq.Limit(limit);
-	model.query = dq;
-}
-
-func (data *dataMap) Count() (int, error) {
-	dq := data.query;
-	if nil == dq {
-		dq = datastore.NewQuery(nameOfPrototype(data.Prototype()));
-	}
-	return dq.Count(data.context);
-}
-
-func (model *Model) WithReference(ref Model) {
-	if (ref.key == nil) {
-		//try to load the reference query
-		panic("Can't search by unexisting reference - key not set");
-	}
-
-	err := model.SetReference(ref);
-	if nil != err {
-		panic(err);
-	}
-	refName := makeRefname(ref.entityName);
-	model.Print("==== WITH REFERENCE ==== with key " + refName);
-
-	model.With(refName + " = ", ref.key);
-}
-
-func (model *Model) ByID(id int64) error {
-	//first try to retrieve item from memcache
-
-	model.key = datastore.NewKey(model.context, model.entityName, "", id, nil);
-	return model.read();
-}
-
-func (model Model) Name() string {
-	return model.entityName;
-}
-
 
 func (data dataMap) Prototype() Prototype {
 	return data.m;

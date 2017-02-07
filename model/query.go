@@ -12,6 +12,7 @@ import (
 type Query struct {
 	dq *datastore.Query
 	mType reflect.Type
+	mValue reflect.Value
 }
 
 func NewQuery(m modelable) *Query {
@@ -29,9 +30,68 @@ func NewQuery(m modelable) *Query {
 	return &query;
 }
 
-func (q *Query) With(field string, value interface{}) *Query {
+/**
+Filter functions
+ */
+func (q *Query) WithModelable(field string, ref modelable) (*Query, error) {
+	refm := ref.getModel();
+	if !refm.Registered {
+		return nil, fmt.Errorf("Modelable reference is not registered %+v", ref);
+	}
+
+	if refm.key == nil {
+		return nil, errors.New("Reference key has not been set. Can't retrieve it from datastore");
+	}
+
+	if _, ok := q.mType.FieldByName(field); !ok {
+		return nil, fmt.Errorf("Struct of type %s has no field with name %s", q.mType.Name(), field);
+	}
+
+	refName := referenceName(q.mType.Name(), field);
+
+	return q.WithField(fmt.Sprintf("%s = ", refName), refm.key), nil;
+}
+
+func (q *Query) WithField(field string, value interface{}) *Query {
 	q.dq = q.dq.Filter(field, value);
 	return q;
+}
+
+func (q *Query) OrderBy(fieldName string) *Query {
+	q.dq = q.dq.Order(fieldName);
+	return q;
+}
+
+func (q *Query) OffsetBy(offset int) *Query {
+	q.dq = q.dq.Offset(offset);
+	return q;
+}
+
+func (q *Query) Limit(limit int) *Query {
+	q.dq = q.dq.Limit(limit);
+	return q;
+}
+
+func (q *Query) Count(ctx context.Context) (int, error) {
+	return q.dq.Count(ctx);
+}
+
+//Shorthand method to retrieve only the first entity satisfying the query
+//It is equivalent to a Get With limit 1
+func (q *Query) First(ctx context.Context) (modelable, error) {
+	q.dq = q.dq.Limit(1);
+	res, err := Get(ctx, q);
+
+	log.Printf("Get errors %v", err);
+	if err != nil {
+		return nil, err;
+	}
+
+	if len(res) > 0 {
+		return res[0], nil;
+	}
+
+	return nil, datastore.ErrNoSuchEntity;
 }
 
 func Get(ctx context.Context, query *Query) ([]modelable, error) {
@@ -44,16 +104,12 @@ func Get(ctx context.Context, query *Query) ([]modelable, error) {
 
 	var modelables []modelable;
 
-	log.Printf("modelable is of type %s", query.mType.Name());
-
 	_, e := get(ctx, query, &modelables);
 
 	if e != nil && e != datastore.Done {
 		return nil, e;
 	}
 
-	//data.Print("DONE RECOVERING ITEMS. FOUND " + strconv.Itoa(rc) + " ITEMS FOR ENTITY " + data.entityName);
-	//log.Printf("GET CALLED. Models: %+v", models);
 	query = nil;
 	return modelables, nil;
 }
@@ -81,9 +137,6 @@ func get(ctx context.Context, query *Query, modelables *[]modelable) (*datastore
 		more = true;
 		//log.Printf("RUNNING QUERY %v FOR MODEL " + data.entityName + " - FOUND ITEM WITH KEY: " + strconv.Itoa(int(key.IntID())), data.query);
 		newModelable := reflect.New(query.mType);
-
-		log.Printf("Created modelable %v", newModelable);
-
 		m, ok := newModelable.Interface().(modelable);
 
 		if !ok {

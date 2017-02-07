@@ -7,6 +7,7 @@ import (
 	"log"
 	"fmt"
 	"reflect"
+	"github.com/pkg/errors"
 )
 
 type KeyMap map[int]string;
@@ -78,7 +79,7 @@ func saveInMemcache(ctx context.Context, m modelable) (err error) {
 func loadFromMemcache(ctx context.Context, m modelable) (err error) {
 	model := m.getModel();
 	if !model.Registered {
-		return nil;
+		return errors.New("Modelable not registered");
 	}
 
 	if model.key == nil {
@@ -100,7 +101,6 @@ func loadFromMemcache(ctx context.Context, m modelable) (err error) {
 			"cached type was %s but %s was requested",
 			reflect.TypeOf(box.Modelable).Name(),
 			reflect.TypeOf(m).Name());
-
 	}
 
 	if err != nil {
@@ -117,11 +117,22 @@ func loadFromMemcache(ctx context.Context, m modelable) (err error) {
 			rm := ref.getModel();
 			rm.key = decodedKey;
 			err = loadFromMemcache(ctx, ref);
+			if err != nil {
+				return err;
+			}
+			model.references[k] = ref;
+
+			//assign the reference values to the box contents.
+			//this needs to be done so that the passing modelable is updated
+			field := reflect.Indirect(reflect.ValueOf(box.Modelable)).Field(k);
+			src := reflect.Indirect(reflect.ValueOf(ref));
+			field.Set(src);
 		}
 	}
 
-	defer func() {
-		//if there are no error we assign the value recovered from memcache to the modelable
+
+	//if there are no error we assign the value recovered from memcache to the modelable
+	defer func(error) {
 		if err == nil {
 			modValue := reflect.ValueOf(*model);
 			dstValue := reflect.Indirect(reflect.ValueOf(m));
@@ -137,7 +148,7 @@ func loadFromMemcache(ctx context.Context, m modelable) (err error) {
 				}
 			}
 		}
-	}()
+	}(err)
 
 	return err;
 }

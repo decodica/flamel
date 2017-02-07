@@ -75,7 +75,7 @@ func mapStructure(t reflect.Type, s *encodedStruct, parentName string) {
 			continue
 		}
 
-		sName := parentName + "." + field.Name
+		sName := referenceName(parentName, field.Name);
 		sValue := encodedField{index:i}
 
 		log.Printf("====MAP STRUCT==== Processing field %s of struct %s", field.Name, t.Name())
@@ -159,7 +159,7 @@ func encodeStruct(s interface{}, props *[]datastore.Property, multiple bool, cod
 		p.Multiple = multiple;
 
 
-		p.Name = name + "." + field.Name;
+		p.Name = referenceName(name, field.Name);
 
 
 		gPrint("==== SAVE ==== encoding field " + p.Name);
@@ -373,8 +373,6 @@ func decodeField(s reflect.Value, p datastore.Property, encodedField encodedFiel
 					field.Set(reflect.Append(field, sliceElem));
 				}
 				decodeField(field.Index(index), p, encodedField.childStruct.fieldNames[p.Name], l);
-				gPrintf("loader: %+v", l.mem);
-				//return errors.New("Error - NOT SUPPORTING SIMPLE SLICES AS OF YET");
 				break;
 			}
 
@@ -384,6 +382,11 @@ func decodeField(s reflect.Value, p datastore.Property, encodedField encodedFiel
 	}
 
 	return nil;
+}
+
+//returns the name of a reference
+func referenceName(parentName string, refName string) string {
+	return parentName + "." + refName;
 }
 
 //takes a property field name and returns it's base
@@ -429,7 +432,7 @@ func toPropertyList(modelable modelable) ([]datastore.Property, error) {
 
 		p := &datastore.Property{};
 
-		p.Name = sType.Name() + "." + field.Name;
+		p.Name = referenceName(sType.Name(), field.Name);
 
 		if rm, ok := model.references[i]; ok {
 			ref := rm.getModel();

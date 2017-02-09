@@ -171,7 +171,7 @@ func deleteFromMemcache(ctx context.Context, m modelable) (err error) {
 	}
 
 	if model.key == nil {
-		return fmt.Errorf("No key registered from modelable %s. Can't delete from memcache.", model.structName)
+		return fmt.Errorf("No key registered from modelable %s. Can't delete from memcache.", reflect.TypeOf(m).Elem().Name())
 	}
 
 	for k, _ := range model.references {

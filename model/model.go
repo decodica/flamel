@@ -259,7 +259,7 @@ func isZero(ref modelable) bool {
 //if the reference is zero there are two behaviours:
 //in create the reference is skipped
 //in update the reference is deleted
-func createOrUpdateReferences(ctx context.Context, model *Model) error {
+func createOrUpdateReferences(ctx context.Context, model *Model) (err error) {
 	for k, _ := range model.references {
 		ref := model.references[k];
 		refModel := ref.getModel();
@@ -267,7 +267,7 @@ func createOrUpdateReferences(ctx context.Context, model *Model) error {
 		if refModel.key == nil {
 			//skip the zero reference
 			if isZero(ref) {
-				return nil;
+				continue;
 			}
 			err := create(ctx, ref);
 			if err != nil {
@@ -275,10 +275,14 @@ func createOrUpdateReferences(ctx context.Context, model *Model) error {
 				return err;
 			}
 		} else {
-		/*	if isZero(ref) {
-				return delete(ctx, ref);
-			}*/
-			err := update(ctx, ref);
+			if isZero(ref) {
+				err = delete(ctx, ref);
+				if err != nil {
+					return err;
+				}
+				continue
+			}
+			err = update(ctx, ref);
 			if err != nil {
 				gaelog.Errorf(ctx, "Transaction failed when updating reference %s. Error %s", model.structName, err.Error())
 				return err
@@ -356,10 +360,15 @@ func ModelableFromID(ctx context.Context, m modelable, id int64) error {
 }
 
 func read(ctx context.Context, m modelable) error {
+	if isZero(m) {
+		//skip reading if the modelable is a zero
+		return nil;
+	}
+
 	model := m.getModel();
 
 	if model.key == nil {
-		return errors.New(fmt.Sprintf("Can't populate struct %s. Model has no key", model.structName));
+		return errors.New(fmt.Sprintf("Can't populate struct %s. Model has no key", reflect.TypeOf(m).Elem().Name()));
 	}
 
 	err := datastore.Get(ctx, model.key, m)
@@ -408,7 +417,9 @@ func delete(ctx context.Context, m modelable) (err error) {
 	model := m.getModel();
 
 	if model.key == nil {
-		return fmt.Errorf("Can't delete modelable %s. Missing key.", reflect.TypeOf(model).Name());
+		//in this case, since we first loaded the modelable, we never inserted anything
+		//we can skip the delete
+		return nil;
 	}
 
 	for k, _ := range model.references {
@@ -420,10 +431,6 @@ func delete(ctx context.Context, m modelable) (err error) {
 	}
 
 	err = datastore.Delete(ctx, model.key);
-
-	if err != nil {
-		model.key = nil;
-	}
 
 	return err;
 }
@@ -444,7 +451,12 @@ func Delete(ctx context.Context, m modelable) (err error) {
 	opts.XG = true;
 
 	err = datastore.RunInTransaction(ctx, func (ctx context.Context) error {
-		return delete(ctx, m);
+		//we first load the model
+		err := read(ctx, m);
+		if err == nil {
+			return delete(ctx, m);
+		}
+		return err;
 	}, &opts);
 
 	return err;
@@ -457,43 +469,6 @@ func nameOfModelable(m modelable) string {
 
 func makeRefname(base string) string {
 	return ref_model_prefix + base;
-}
-
-//also sets the model to nil
-func (data *dataMap) delete() error {
-	if (data.key == nil) {
-		return errors.New("Can't delete a data that hasn't been loaded or created");
-	}
-
-	err := datastore.Delete(data.context, data.key);
-
-	if err != nil {
-		return err;
-	}
-
-	defer func(err error) {
-		if err == nil {
-			memcache.Delete(data.context, data.key.Encode());
-			data.Print("==== MEMCACHE ==== DELETE " + data.entityName + " FROM MEMCACHE");
-		}
-	}(err);
-
-	return err;
-}
-
-func (model *Model) Delete() error {
-	e := model.dataMap.delete();
-
-	defer func(err error) {
-		if err == nil {
-			e := model.deleteSearch();
-			if e == nil {
-				model = nil;
-			}
-		}
-	}(e);
-
-	return e;
 }
 
 //retrieves up to datastore limits (currently 1000) entities from either memcache or datastore

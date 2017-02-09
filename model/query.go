@@ -78,46 +78,49 @@ func (q *Query) Count(ctx context.Context) (int, error) {
 
 //Shorthand method to retrieve only the first entity satisfying the query
 //It is equivalent to a Get With limit 1
-func (q *Query) First(ctx context.Context) (modelable, error) {
+func (q *Query) First(ctx context.Context, m modelable) (err error) {
 	q.dq = q.dq.Limit(1);
-	res, err := q.Get(ctx);
 
-	log.Printf("Get errors %v", err);
+	mm := []modelable{}
+
+	err = q.Get(ctx, &mm);
+
 	if err != nil {
-		return nil, err;
+		return err;
 	}
 
-	if len(res) > 0 {
-		return res[0], nil;
+	if len(mm) > 0 {
+		src := reflect.Indirect(reflect.ValueOf(mm[0]));
+		reflect.Indirect(reflect.ValueOf(m)).Set(src);
+		log.Printf("Found first item. %+v. Result is %+v", m, mm[0])
+		return nil;
 	}
 
-	return nil, datastore.ErrNoSuchEntity;
+	return datastore.ErrNoSuchEntity;
 }
 
-func (query *Query) Get(ctx context.Context) ([]modelable, error) {
+func (query *Query) Get(ctx context.Context, modelables *[]modelable) error {
 
 	if (query.dq == nil) {
-		return nil, errors.New("Invalid query. It's nil");
+		return errors.New("Invalid query. Query is nil");
 	}
 
 	query.dq = query.dq.KeysOnly();
 
-	var modelables []modelable;
-
-	_, e := get(ctx, query, &modelables);
+	_, e := query.get(ctx, modelables);
 
 	if e != nil && e != datastore.Done {
-		return nil, e;
+		return e;
 	}
 
 	defer func() {
 		query = nil;
 	}()
 
-	return modelables, nil;
+	return nil;
 }
 
-func get(ctx context.Context, query *Query, modelables *[]modelable) (*datastore.Cursor, error) {
+func (query *Query) get(ctx context.Context, modelables *[]modelable) (*datastore.Cursor, error) {
 
 	more := false;
 	rc := 0;
@@ -152,6 +155,8 @@ func get(ctx context.Context, query *Query, modelables *[]modelable) (*datastore
 
 		model := m.getModel()
 		model.key = key;
+
+		log.Printf("Item retrieved is %+v", m)
 
 		err = Read(ctx, m);
 		if err != nil {

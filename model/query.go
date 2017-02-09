@@ -18,7 +18,7 @@ type Query struct {
 func NewQuery(m modelable) *Query {
 	model := m.getModel();
 	if !model.Registered {
-		Register(m);
+		register(m);
 	}
 
 	q := datastore.NewQuery(model.structName);
@@ -80,7 +80,7 @@ func (q *Query) Count(ctx context.Context) (int, error) {
 //It is equivalent to a Get With limit 1
 func (q *Query) First(ctx context.Context) (modelable, error) {
 	q.dq = q.dq.Limit(1);
-	res, err := Get(ctx, q);
+	res, err := q.Get(ctx);
 
 	log.Printf("Get errors %v", err);
 	if err != nil {
@@ -94,7 +94,7 @@ func (q *Query) First(ctx context.Context) (modelable, error) {
 	return nil, datastore.ErrNoSuchEntity;
 }
 
-func Get(ctx context.Context, query *Query) ([]modelable, error) {
+func (query *Query) Get(ctx context.Context) ([]modelable, error) {
 
 	if (query.dq == nil) {
 		return nil, errors.New("Invalid query. It's nil");
@@ -110,7 +110,10 @@ func Get(ctx context.Context, query *Query) ([]modelable, error) {
 		return nil, e;
 	}
 
-	query = nil;
+	defer func() {
+		query = nil;
+	}()
+
 	return modelables, nil;
 }
 
@@ -145,7 +148,7 @@ func get(ctx context.Context, query *Query, modelables *[]modelable) (*datastore
 			return nil, err
 		}
 
-		Register(m);
+		register(m);
 
 		model := m.getModel()
 		model.key = key;
@@ -171,3 +174,173 @@ func get(ctx context.Context, query *Query, modelables *[]modelable) (*datastore
 	}
 }
 
+//retrieves up to datastore limits (currently 1000) entities from either memcache or datastore
+//each datamap must have the key already set
+
+/*func (query *Query) GetMulti(ctx context.Context) ([]Model, error) {
+	//check if struct contains the fields
+	const batched int = 1000;
+
+	count, err := query.Count(ctx);
+
+	if err != nil {
+		return nil, err;
+	}
+
+	div := (count / batched);
+	if (count % batched != 0) {
+		div++;
+	}
+
+	log.Printf("found (count) %d items. div is %v", count, div);
+	//create the blueprint
+	newModelable := reflect.New(q.mType);
+
+	//allocates memory for the resulting array
+	res := make([]Model, count, count);
+
+	var chans []chan []modelable;
+
+	//retrieve items in concurrent batches
+	mutex := new(sync.Mutex);
+	for paging := 0; paging < div; paging++ {
+		c := make(chan []modelable);
+
+		go func(page int, ch chan []modelable, ctx context.Context) {
+
+			log.Printf(ctx, "Batch #%d started", page);
+			offset := page * batched;
+
+			rq := batched;
+			if page + 1 == div {
+				//we need the exact number o GAE will complain since len(dst) != len(keys) in getAll
+				rq = count % batched;
+			}
+
+			//copy the data query into the local copy
+			//dq := datastore.NewQuery(nameOfPrototype(data.Prototype()));
+			dq := query.dq;
+			dq = dq.Offset(offset);
+			dq = dq.KeysOnly();
+
+			keys := make([]*datastore.Key, rq, rq);
+			partial := make([]modelable, rq, rq);
+
+			done := false;
+
+			//Lock the loop or else other goroutine will starve the go scheduler causing a datastore timeout.
+			mutex.Lock();
+			c := 0;
+			var cursor *datastore.Cursor;
+			//we first get the keys in a batch
+			for !done {
+
+				dq = dq.Limit(200);
+				//right count
+				if cursor != nil {
+					//since we are using start, remove the offset, or it will count from the start of the query
+					dq = dq.Offset(0);
+					dq = dq.Start(*cursor);
+				}
+
+				it := dq.Run(ctx);
+
+				for {
+
+					key, err := it.Next(nil);
+
+					if (err == datastore.Done) {
+						break;
+					}
+
+					if err != nil {
+						panic(err);
+					}
+
+					dm := &dataMap{};
+					*dm = *mm.dataMap;
+					dm.m = reflect.New(mtype).Interface().(Prototype);
+
+					dm.key = key;
+
+					log.Printf(ctx, "c counter has value #%d. Max is %d, key is %s", c, rq, key.Encode());
+					//populates the dst
+					partial[c] = dm;
+					//populate the key
+					keys[c] = key;
+					c++;
+				}
+
+				if c == rq {
+					//if there are no more entries to be loaded, break the loop
+					done = true;
+					log.Debugf(data.context, "Batch #%d got %d keys from query", page, c);
+				} else {
+					//else, if we still have entries, update cursor position
+					newCursor, e := it.Cursor();
+					if e != nil {
+						panic(err);
+					}
+					cursor = &newCursor;
+				}
+			}
+			mutex.Unlock();
+
+			fromCache, err := partial.cacheGetMulti(ctx, keys);
+
+			if err != nil {
+				log.Errorf(ctx, "Error retrieving multi from cache: %v", err);
+			}
+
+			c = 0;
+			if len(fromCache) < rq {
+
+				leftCount := len(keys) - len(fromCache);
+
+				remainingKeys := make([]*datastore.Key, leftCount, leftCount);
+				dst := make([]*dataMap, leftCount, leftCount);
+
+				for i, k := range keys {
+					_, ok := fromCache[k];
+					if !ok {
+						//add the pointer to those keys that have to be retrieved
+						remainingKeys[c] = k;
+						dst[c] = partial[i];
+						c++;
+					}
+				}
+
+				err = datastore.GetMulti(data.context, remainingKeys, dst);
+
+				if err != nil {
+					panic(err);
+				}
+			}
+
+			log.Debugf(data.context, "Batch #%d retrieved all items. %d items retrieved from cache, %d items retrieved from datastore", page, len(fromCache), c);
+			//now load the references of the model
+
+			//todo: rework because it is not setting references.
+			//			partial.cacheSetMulti(ctx);
+
+			ch <- partial;
+
+		} (paging, c, data.context);
+
+		chans = append(chans, c);
+	}
+
+	offset := 0;
+	for _ , c := range chans {
+		partial := <- c;
+		for j , dm := range partial {
+			m := Model{dataMap: dm, searchable:mm.searchable};
+			res[offset + j] = m;
+		}
+
+		offset += len(partial);
+		close(c);
+	}
+
+	return res, nil;
+}*/

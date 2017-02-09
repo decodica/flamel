@@ -7,7 +7,6 @@ import (
 	"log"
 	"fmt"
 	"reflect"
-	"github.com/pkg/errors"
 )
 
 type KeyMap map[int]string;
@@ -30,8 +29,9 @@ func saveInMemcache(ctx context.Context, m modelable) (err error) {
 	//skip unregistered models
 	model := m.getModel();
 
+	//a modelable must be registered to be saved in memcache
 	if !model.Registered {
-		return nil;
+		panic("Modelable not registered");
 	}
 
 	if nil == model.key {
@@ -49,6 +49,13 @@ func saveInMemcache(ctx context.Context, m modelable) (err error) {
 
 	for k, _ := range model.references {
 		ref := model.references[k];
+
+		//if the reference is zero we ignore it
+		if isZero(ref) {
+			//try to delete the reference. If we have an error then continue
+			continue
+		}
+
 		rm := ref.getModel();
 		err = saveInMemcache(ctx, ref);
 
@@ -78,8 +85,10 @@ func saveInMemcache(ctx context.Context, m modelable) (err error) {
 
 func loadFromMemcache(ctx context.Context, m modelable) (err error) {
 	model := m.getModel();
+
+	//a modelable must be registered to be read from memcache[
 	if !model.Registered {
-		return errors.New("Modelable not registered");
+		panic("Modelable not registered");
 	}
 
 	if model.key == nil {
@@ -151,6 +160,34 @@ func loadFromMemcache(ctx context.Context, m modelable) (err error) {
 	}(err)
 
 	return err;
+}
+
+func deleteFromMemcache(ctx context.Context, m modelable) (err error) {
+	model := m.getModel();
+
+	//a modelable must be registered to be read from memcache[
+	if !model.Registered {
+		panic("Modelable not registered");
+	}
+
+	if model.key == nil {
+		return fmt.Errorf("No key registered from modelable %s. Can't delete from memcache.", model.structName)
+	}
+
+	for k, _ := range model.references {
+		ref := model.references[k];
+		err := deleteFromMemcache(ctx, ref);
+		if err != nil {
+			return err;
+		}
+	}
+
+	cKey := model.EncodedKey();
+	if !validCacheKey(cKey) {
+		return fmt.Errorf("cacheModel box key %s is too long", cKey);
+	}
+
+	return memcache.Delete(ctx, cKey);
 }
 
 /*func (data) cacheGet() error {

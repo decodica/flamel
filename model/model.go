@@ -115,10 +115,8 @@ func (model Model) EncodedKey() string {
 
 
 //Registers m and its references to work with the model framework.
-//Calling Create, Update or Read on an unregistered modelable causes a panic
-//Registered references are always read and written from/to the datastore.
-//Unregistered references won't be written to/read from the datastore.
-func Register(m modelable) {
+//Zeroed struct references won't be written to/read from the datastore.
+func register(m modelable) {
 
 	mType := reflect.TypeOf(m).Elem()
 	//retrieve modelable anagraphics
@@ -170,7 +168,7 @@ func Register(m modelable) {
 
 			if reference, ok := obj.Field(i).Addr().Interface().(modelable); ok {
 				//we register the modelable
-				Register(reference)
+				register(reference)
 				//here the reference is registered
 				s.references[i] = reference
 			}
@@ -246,23 +244,40 @@ func update(ctx context.Context, m modelable) error {
 	return nil;
 }
 
+//Returns true if the modelable is zero.
+//todo: benchmark and possibly make more efficient
+func isZero(ref modelable) bool {
+	typ := reflect.TypeOf(ref).Elem();
+	zero := reflect.New(typ).Interface().(modelable);
+	zero.setModel(*ref.getModel());
+	//log.Printf("Type is %s, Zero is %+v, value is %+v. Ref is zero %v",typ.Name(), zero, ref, reflect.DeepEqual(zero, ref));
+	return  reflect.DeepEqual(zero, ref);
+}
+
 
 //creates or updates references of model model.
-//if one of the reference is not registered it is skipped.
-//Only registered references can be saved
+//if the reference is zero there are two behaviours:
+//in create the reference is skipped
+//in update the reference is deleted
 func createOrUpdateReferences(ctx context.Context, model *Model) error {
 	for k, _ := range model.references {
 		ref := model.references[k];
 		refModel := ref.getModel();
+
 		if refModel.key == nil {
-			if refModel.Registered {
-				err := create(ctx, ref);
-				if err != nil {
-					gaelog.Errorf(ctx, "Transaction failed when creating reference %s. Error %s", model.structName, err.Error())
-					return err;
-				}
+			//skip the zero reference
+			if isZero(ref) {
+				return nil;
+			}
+			err := create(ctx, ref);
+			if err != nil {
+				gaelog.Errorf(ctx, "Transaction failed when creating reference %s. Error %s", model.structName, err.Error())
+				return err;
 			}
 		} else {
+		/*	if isZero(ref) {
+				return delete(ctx, ref);
+			}*/
 			err := update(ctx, ref);
 			if err != nil {
 				gaelog.Errorf(ctx, "Transaction failed when updating reference %s. Error %s", model.structName, err.Error())
@@ -275,12 +290,9 @@ func createOrUpdateReferences(ctx context.Context, model *Model) error {
 }
 
 //Reads data from a modelable and writes it to the datastore as an entity with a new key.
-//m must be registered or it will cause a panic.
-//If m has unregistered references they will be skipped and won't be written to the datastore,
 func Create(ctx context.Context, m modelable) (err error) {
 	if !m.getModel().Registered {
-		err = fmt.Errorf("Called create on unregistered model for modelable %v", m);
-		panic(err);
+		register(m);
 	}
 
 	defer func() {
@@ -309,8 +321,7 @@ func Create(ctx context.Context, m modelable) (err error) {
 // calling Update will cause references to be written twice: one for the first registered ref and the other for the updated reference.
 func Update(ctx context.Context, m modelable) (err error) {
 	if !m.getModel().Registered {
-		err = fmt.Errorf("Called Update on unregistered model for modelable %v", m);
-		panic(err);
+		register(m);
 	}
 
 	defer func() {
@@ -338,7 +349,7 @@ func ModelableFromID(ctx context.Context, m modelable, id int64) error {
 	//first try to retrieve item from memcache
 	model := m.getModel();
 	if !model.Registered {
-		Register(m);
+		register(m);
 	}
 	model.key = datastore.NewKey(ctx, model.structName, "", id, nil);
 	return Read(ctx, m);
@@ -370,14 +381,10 @@ func read(ctx context.Context, m modelable) error {
 }
 
 //Reads data from the datastore and writes them into the modelable.
-//Writing into a modelable can happen only if the modelable is registered.
-//If m is unregistered it will panic
-//Unregistered modelables and all their references are skipped.
-// This allows for reading partial modelable from the datastore.
+//Writing into a modelable can happen only if the modelable is registered and has an ID.
 func Read(ctx context.Context, m modelable) (err error) {
 	if !m.getModel().Registered {
-		err = fmt.Errorf("Called Update on unregistered model for modelable %v", m);
-		panic(err);
+		register(m);
 	}
 
 	opts := datastore.TransactionOptions{}
@@ -393,6 +400,52 @@ func Read(ctx context.Context, m modelable) (err error) {
 	err = datastore.RunInTransaction(ctx, func (ctx context.Context) error {
 		return read(ctx, m);
 	}, &opts)
+
+	return err;
+}
+
+func delete(ctx context.Context, m modelable) (err error) {
+	model := m.getModel();
+
+	if model.key == nil {
+		return fmt.Errorf("Can't delete modelable %s. Missing key.", reflect.TypeOf(model).Name());
+	}
+
+	for k, _ := range model.references {
+		ref := model.references[k];
+		err = delete(ctx, ref);
+		if err != nil {
+			return err;
+		}
+	}
+
+	err = datastore.Delete(ctx, model.key);
+
+	if err != nil {
+		model.key = nil;
+	}
+
+	return err;
+}
+
+func Delete(ctx context.Context, m modelable) (err error) {
+
+	defer func() {
+		if err == nil {
+			err = deleteFromMemcache(ctx, m)
+			if err != nil {
+				gaelog.Errorf(ctx, "Error deleting items from memcache: %v", err);
+			}
+		}
+	}();
+
+	opts := datastore.TransactionOptions{}
+	opts.Attempts = 1;
+	opts.XG = true;
+
+	err = datastore.RunInTransaction(ctx, func (ctx context.Context) error {
+		return delete(ctx, m);
+	}, &opts);
 
 	return err;
 }
@@ -483,185 +536,6 @@ func (data dataMaps) readMulti(ctx context.Context) {
 	//now load the references of the model
 	data.cacheSetMulti(ctx);
 }
-
-func (data *dataMap) GetMulti() ([]Model, error) {
-	//check if struct contains the fields
-	const batched int = 1000;
-
-	count, err := data.Count();
-
-	if err != nil {
-		return nil, err;
-	}
-
-	div := (count / batched);
-	if (count % batched != 0) {
-		div++;
-	}
-
-	log.Debugf(data.context, "found (count) %d items. div is %v", count, div);
-	//create the blueprint
-	prototype := data.Prototype();
-	mtype := reflect.ValueOf(prototype).Elem().Type();
-	val , _ := reflect.New(mtype).Interface().(Prototype);
-	mm, _ := NewModel(data.context, val);
-	mm.loadRef = false;
-
-	//allocates memory for the resulting array
-	res := make([]Model, count, count);
-
-	var chans []chan []*dataMap;
-
-	//retrieve items in concurrent batches
-	mutex := new(sync.Mutex);
-	for paging := 0; paging < div; paging++ {
-		c := make(chan []*dataMap);
-
-		go func(page int, ch chan []*dataMap, ctx context.Context) {
-
-			log.Debugf(data.context, "Batch #%d started", page);
-			offset := page * batched;
-
-			rq := batched;
-			if page + 1 == div {
-				//we need the exact number o GAE will complain since len(dst) != len(keys) in getAll
-				rq = count % batched;
-			}
-
-			//copy the data query into the local copy
-			//dq := datastore.NewQuery(nameOfPrototype(data.Prototype()));
-			dq := data.query;
-			if data.query == nil {
-				dq = datastore.NewQuery(nameOfPrototype(data.Prototype()));
-			}
-			dq = dq.Offset(offset);
-			dq = dq.KeysOnly();
-
-			keys := make([]*datastore.Key, rq, rq);
-			partial := make(dataMaps, rq, rq);
-
-			done := false;
-
-			//Lock the loop or else other goroutine will starve the go scheduler causing a datastore timeout.
-			mutex.Lock();
-			c := 0;
-			var cursor *datastore.Cursor;
-			for !done {
-
-				dq = dq.Limit(200);
-				//right count
-				if cursor != nil {
-					//since we are using start, remove the offset, or it will count from the start of the query
-					dq = dq.Offset(0);
-					dq = dq.Start(*cursor);
-				}
-
-				it := dq.Run(data.context);
-
-				for {
-
-					key, err := it.Next(nil);
-
-					if (err == datastore.Done) {
-						break;
-					}
-
-					if err != nil {
-						panic(err);
-					}
-
-					dm := &dataMap{};
-					*dm = *mm.dataMap;
-					dm.m = reflect.New(mtype).Interface().(Prototype);
-
-					dm.key = key;
-
-					log.Debugf(data.context, "c counter has value #%d. Max is %d, key is %s", c, rq, key.Encode());
-					//populates the dst
-					partial[c] = dm;
-					//populate the key
-					keys[c] = key;
-					c++;
-				}
-
-				if c == rq {
-					//if there are no more entries to be loaded, break the loop
-					done = true;
-					log.Debugf(data.context, "Batch #%d got %d keys from query", page, c);
-				} else {
-					//else, if we still have entries, update cursor position
-					newCursor, e := it.Cursor();
-					if e != nil {
-						panic(err);
-					}
-					cursor = &newCursor;
-				}
-			}
-			mutex.Unlock();
-
-			fromCache, err := partial.cacheGetMulti(ctx, keys);
-
-			if err != nil {
-				log.Errorf(ctx, "Error retrieving multi from cache: %v", err);
-			}
-
-			c = 0;
-			if len(fromCache) < rq {
-
-				leftCount := len(keys) - len(fromCache);
-
-				remainingKeys := make([]*datastore.Key, leftCount, leftCount);
-				dst := make([]*dataMap, leftCount, leftCount);
-
-				for i, k := range keys {
-					_, ok := fromCache[k];
-					if !ok {
-						//add the pointer to those keys that have to be retrieved
-						remainingKeys[c] = k;
-						dst[c] = partial[i];
-						c++;
-					}
-				}
-
-				err = datastore.GetMulti(data.context, remainingKeys, dst);
-
-				if err != nil {
-					panic(err);
-				}
-			}
-
-			log.Debugf(data.context, "Batch #%d retrieved all items. %d items retrieved from cache, %d items retrieved from datastore", page, len(fromCache), c);
-			//now load the references of the model
-
-			//todo: rework because it is not setting references.
-//			partial.cacheSetMulti(ctx);
-
-			ch <- partial;
-
-		} (paging, c, data.context);
-
-		chans = append(chans, c);
-	}
-
-	offset := 0;
-	for _ , c := range chans {
-		partial := <- c;
-		for j , dm := range partial {
-			m := Model{dataMap: dm, searchable:mm.searchable};
-			res[offset + j] = m;
-		}
-
-		offset += len(partial);
-		close(c);
-	}
-
-	return res, nil;
-}
-
-func (data dataMap) Prototype() Prototype {
-	return data.m;
-}
-
 
 //quick key value storage that allows saving of model key to memcache.
 //this allows for strong consistence storage.

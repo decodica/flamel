@@ -431,17 +431,21 @@ func toPropertyList(modelable modelable) ([]datastore.Property, error) {
 		}
 
 		p := &datastore.Property{};
-
 		p.Name = referenceName(sType.Name(), field.Name);
 
 		if rm, ok := model.references[i]; ok {
 			ref := rm.getModel();
 
-			//pass reference types to datastore as *datastore.Key type
-		//	name := ref_model_prefix + ref.structName;
-			//p := datastore.Property{Name:name, Value:ref.key};
-			p.Value = ref.key;
-			props = append(props, *p);
+			//if the reference is not a zero we can write it.
+			if !isZero(rm) {
+				//pass reference types to datastore as *datastore.Key type
+				//	name := ref_model_prefix + ref.structName;
+				//p := datastore.Property{Name:name, Value:ref.key};
+				p.Value = ref.key;
+				props = append(props, *p);
+			} else {
+				log.Print("Zero struct reference!")
+			}
 			continue
 		}
 

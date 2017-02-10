@@ -4,7 +4,7 @@ import (
 	"golang.org/x/net/context"
 	"google.golang.org/appengine/memcache"
 	"google.golang.org/appengine/datastore"
-	"log"
+	//"log"
 	"fmt"
 	"reflect"
 )
@@ -53,6 +53,7 @@ func saveInMemcache(ctx context.Context, m modelable) (err error) {
 		//if the reference is zero we ignore it
 		if isZero(ref) {
 			//try to delete the reference. If we have an error then continue
+			deleteFromMemcache(ctx, ref)
 			continue
 		}
 
@@ -72,7 +73,7 @@ func saveInMemcache(ctx context.Context, m modelable) (err error) {
 	box.Modelable = m;
 	i.Object = box;
 
-	log.Printf("Saving modelable %+v to memcache at key %s", m, i.Key);
+	//log.Printf("Saving modelable %+v to memcache at key %s", m, i.Key);
 
 	err = memcache.Gob.Set(ctx, &i);
 

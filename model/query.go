@@ -18,7 +18,7 @@ type Query struct {
 func NewQuery(m modelable) *Query {
 	model := m.getModel();
 	if !model.Registered {
-		register(m);
+		index(m);
 	}
 
 	q := datastore.NewQuery(model.structName);
@@ -92,7 +92,6 @@ func (q *Query) First(ctx context.Context, m modelable) (err error) {
 	if len(mm) > 0 {
 		src := reflect.Indirect(reflect.ValueOf(mm[0]));
 		reflect.Indirect(reflect.ValueOf(m)).Set(src);
-		log.Printf("Found first item. %+v. Result is %+v", m, mm[0])
 		return nil;
 	}
 
@@ -151,12 +150,10 @@ func (query *Query) get(ctx context.Context, modelables *[]modelable) (*datastor
 			return nil, err
 		}
 
-		register(m);
+		index(m);
 
 		model := m.getModel()
 		model.key = key;
-
-		log.Printf("Item retrieved is %+v", m)
 
 		err = Read(ctx, m);
 		if err != nil {

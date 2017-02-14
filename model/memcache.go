@@ -163,13 +163,8 @@ func loadFromMemcache(ctx context.Context, m modelable) (err error) {
 	return err;
 }
 
-/*func deleteFromMemcache(ctx context.Context, m modelable) (err error) {
+func deleteFromMemcache(ctx context.Context, m modelable) (err error) {
 	model := m.getModel();
-
-	//a modelable must be registered to be read from memcache[
-	if !model.Registered {
-		panic("Modelable not registered");
-	}
 
 	if model.key == nil {
 		return fmt.Errorf("No key registered from modelable %s. Can't delete from memcache.", reflect.TypeOf(m).Elem().Name())
@@ -177,10 +172,11 @@ func loadFromMemcache(ctx context.Context, m modelable) (err error) {
 
 	for k, _ := range model.references {
 		ref := model.references[k];
-		err := deleteFromMemcache(ctx, ref);
+		err := deleteFromMemcache(ctx, ref.Modelable);
 		if err != nil {
 			return err;
 		}
+		ref.Key = nil;
 	}
 
 	cKey := model.EncodedKey();
@@ -188,8 +184,14 @@ func loadFromMemcache(ctx context.Context, m modelable) (err error) {
 		return fmt.Errorf("cacheModel box key %s is too long", cKey);
 	}
 
+	defer func(error) {
+		if err == nil {
+			model.key = nil;
+		}
+	}(err)
+
 	return memcache.Delete(ctx, cKey);
-}*/
+}
 
 /*func (data) cacheGet() error {
 	if nil == data.key {

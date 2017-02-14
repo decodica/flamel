@@ -12,6 +12,7 @@ import (
 	"errors"
 	"strings"
 	"encoding/gob"
+	"google.golang.org/appengine/memcache"
 )
 
 var (
@@ -504,28 +505,25 @@ func update(ctx context.Context, m modelable) error {
 	return nil;
 }
 
-/*func del(ctx context.Context, m modelable) (err error) {
+func del(ctx context.Context, m modelable) (err error) {
 	model := m.getModel();
 
 	if model.key == nil {
-		//in this case, since we first loaded the modelable, we never inserted anything
-		//we can skip the delete
-		return errors.New("Can't delete struct %s. The key is nil");
+		return errors.New("Can't delete struct . The key is nil");
 	}
 
 	for k, _ := range model.references {
 		ref := model.references[k];
-		err = del(ctx, ref);
+		err = del(ctx, ref.Modelable);
 		if err != nil {
 			return err;
 		}
 	}
-	return nil
 
 	err = datastore.Delete(ctx, model.key);
 
 	return err;
-}*/
+}
 
 //Reads data from a modelable and writes it to the datastore as an entity with a new key.
 func Create(ctx context.Context, m modelable) (err error) {
@@ -626,12 +624,12 @@ func Read(ctx context.Context, m modelable) (err error) {
 	return err;
 }
 
-/*func Delete(ctx context.Context, m modelable) (err error) {
+func Delete(ctx context.Context, m modelable) (err error) {
 
 	defer func() {
 		if err == nil {
 			err = deleteFromMemcache(ctx, m)
-			if err != nil {
+			if err != nil && err != memcache.ErrCacheMiss{
 				gaelog.Errorf(ctx, "Error deleting items from memcache: %v", err);
 			}
 		}
@@ -642,16 +640,11 @@ func Read(ctx context.Context, m modelable) (err error) {
 	opts.XG = true;
 
 	err = datastore.RunInTransaction(ctx, func (ctx context.Context) error {
-		//we first load the model
-		err := read(ctx, m);
-		if err == nil {
-			return del(ctx, m);
-		}
-		return err;
+		return del(ctx, m);
 	}, &opts);
 
 	return err;
-}*/
+}
 
 /*
 func nameOfModelable(m modelable) string {

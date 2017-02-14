@@ -2,10 +2,8 @@ package model
 
 import (
 	"google.golang.org/appengine/datastore"
-	"google.golang.org/appengine"
 	gaelog "google.golang.org/appengine/log"
 	"reflect"
-	"time"
 	"golang.org/x/net/context"
 	"log"
 	"fmt"
@@ -13,14 +11,6 @@ import (
 	"strings"
 	"encoding/gob"
 	"google.golang.org/appengine/memcache"
-)
-
-var (
-	typeOfBlobKey = reflect.TypeOf(appengine.BlobKey(""))
-	typeOfByteSlice = reflect.TypeOf([]byte(nil))
-	typeOfByteString = reflect.TypeOf(datastore.ByteString(nil))
-	typeOfGeoPoint = reflect.TypeOf(appengine.GeoPoint{})
-	typeOfTime = reflect.TypeOf(time.Time{})
 )
 
 const ref_model_prefix string = "ref_";

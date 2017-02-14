@@ -53,7 +53,8 @@ func (q *Query) WithModelable(field string, ref modelable) (*Query, error) {
 }
 
 func (q *Query) WithField(field string, value interface{}) *Query {
-	q.dq = q.dq.Filter(field, value);
+	prepared := entityPropName(q.mType.Name(), field);
+	q.dq = q.dq.Filter(prepared, value);
 	return q;
 }
 
@@ -83,7 +84,7 @@ func (q *Query) First(ctx context.Context, m modelable) (err error) {
 
 	mm := []modelable{}
 
-	err = q.Get(ctx, &mm);
+	err = q.GetAll(ctx, &mm);
 
 	if err != nil {
 		return err;
@@ -98,18 +99,30 @@ func (q *Query) First(ctx context.Context, m modelable) (err error) {
 	return datastore.ErrNoSuchEntity;
 }
 
-func (query *Query) Get(ctx context.Context, modelables *[]modelable) error {
+func (query *Query) GetAll(ctx context.Context, dst interface{}) error {
 
-	if (query.dq == nil) {
+	if query.dq == nil {
 		return errors.New("Invalid query. Query is nil");
 	}
 
-	query.dq = query.dq.KeysOnly();
+	var cursor *datastore.Cursor;
+	var e error;
 
-	_, e := query.get(ctx, modelables);
+	done := false;
 
-	if e != nil && e != datastore.Done {
-		return e;
+	for !done {
+
+		if cursor != nil {
+			query.dq = query.dq.Start(*cursor);
+		}
+
+		cursor, e = query.get(ctx, dst);
+
+		if e != datastore.Done && e != nil {
+			panic(e)
+		}
+
+		done = e == datastore.Done;
 	}
 
 	defer func() {
@@ -119,12 +132,20 @@ func (query *Query) Get(ctx context.Context, modelables *[]modelable) error {
 	return nil;
 }
 
-func (query *Query) get(ctx context.Context, modelables *[]modelable) (*datastore.Cursor, error) {
+func (query *Query) get(ctx context.Context, dst interface{}) (*datastore.Cursor, error) {
 
 	more := false;
 	rc := 0;
 	it := query.dq.Run(ctx);
 	log.Printf("Datastore query is %+v", query.dq);
+
+	dstv := reflect.ValueOf(dst);
+
+	if !isValidContainer(dstv) {
+		return nil, fmt.Errorf("Invalid container of type %s. Container must be a modelable slice", dstv.Elem().Type().Name());
+	}
+
+	modelables := dstv.Elem();
 
 	for {
 
@@ -161,7 +182,9 @@ func (query *Query) get(ctx context.Context, modelables *[]modelable) (*datastor
 			return nil, err;
 		}
 
-		*modelables = append(*modelables, m);
+		log.Printf("Found modelable %+v", m);
+		modelables.Set(reflect.Append(modelables, reflect.ValueOf(m)));
+
 		rc++;
 	}
 
@@ -174,6 +197,34 @@ func (query *Query) get(ctx context.Context, modelables *[]modelable) (*datastor
 
 		return &cursor, e;
 	}
+}
+
+
+//container must be *[]modelable
+func isValidContainer(container reflect.Value) bool {
+	log.Printf("Container type is : %+v", container.Type());
+	if container.Kind() != reflect.Ptr {
+		log.Printf("Container is not a ptr. Container is of type: %+v", container.Type());
+		return false;
+	}
+
+	celv := container.Elem();
+
+	if celv.Kind() != reflect.Slice {
+		log.Printf("Container is not a slice. Container elem is of kind: %+v", celv.Kind());
+		return false;
+	}
+
+	cel := celv.Type().Elem();
+	ok := cel.Implements(typeOfModelable);
+	if !ok {
+		log.Printf("Container type %+v doesn't implement %+v.", cel, typeOfModelable);
+	}
+	return ok;
+}
+
+func isTypeModelable(t reflect.Type) bool {
+	return t.Implements(typeOfModelable);
 }
 
 //retrieves up to datastore limits (currently 1000) entities from either memcache or datastore

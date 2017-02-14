@@ -13,12 +13,14 @@ import (
 )
 
 
+//Define special reflect.Type
 var (
+	typeOfGeoPoint = reflect.TypeOf(appengine.GeoPoint{})
+	typeOfTime = reflect.TypeOf(time.Time{})
 	typeOfModel = reflect.TypeOf(Model{})
+	typeOfModelable = reflect.TypeOf((*modelable)(nil)).Elem();
 	typeOfStructure = reflect.TypeOf(structure{})
 )
-
-
 
 //struct value represent a struct that internally can map other structs
 //fieldIndex is the index of the struct
@@ -387,6 +389,11 @@ func decodeField(s reflect.Value, p datastore.Property, encodedField encodedFiel
 //returns the name of a reference
 func referenceName(parentName string, refName string) string {
 	return parentName + "." + refName;
+}
+
+
+func entityPropName(entityName string, fieldName string) string {
+	return fmt.Sprintf("%s.%s", entityName, fieldName);
 }
 
 //takes a property field name and returns it's base

@@ -413,7 +413,7 @@ func createReference(ctx context.Context, ref *reference) (err error) {
 	}
 
 	defer func() {
-		if err != nil {
+		if err == nil {
 			ref.Key = ref.Modelable.getModel().key;
 		}
 	}();

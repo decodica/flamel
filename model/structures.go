@@ -58,6 +58,7 @@ func mapStructure(t reflect.Type, s *encodedStruct, parentName string) {
 	//iterate over struct props
 	for i := 0; i < t.NumField(); i++ {
 		field := t.Field(i);
+		fType := field.Type;
 
 		//skip unexported fields
 		if field.PkgPath != "" {
@@ -66,7 +67,7 @@ func mapStructure(t reflect.Type, s *encodedStruct, parentName string) {
 		}
 
 		//skip model mapping in field
-		if field.Type == typeOfModel {
+		if fType == typeOfModel {
 			continue
 		}
 
@@ -80,24 +81,28 @@ func mapStructure(t reflect.Type, s *encodedStruct, parentName string) {
 		sName := referenceName(parentName, field.Name);
 		sValue := encodedField{index:i}
 
+
+
 		log.Printf("====MAP STRUCT==== Processing field %s of struct %s", field.Name, t.Name())
 
-		switch field.Type.Kind() {
+		switch fType.Kind() {
 			case reflect.Map:
 			fallthrough
 			case reflect.Array:
 			continue
 			case reflect.Slice:
-				//todo: se è uno slice di struct, trattali tutti alla stessa maniera,
+				//todo: validate supported slices
 				//notifica a GAE che è uno slice usando property.multiple in save/load
 				//pensare a come rappresentare nella mappa uno slice.
 				//todo::if here, nested slice so not supported
+				fType = field.Type.Elem();
+			fallthrough;
 			case reflect.Struct:
 
 				//we already mapped the struct, skip further computations
-				if _, ok := encodedStructs[field.Type]; ok {
-					log.Printf("!!!Struct of type %s already mapped. Using mapped value %v", field.Type, encodedStructs[field.Type])
-					sValue.childStruct = encodedStructs[field.Type]
+				if _, ok := encodedStructs[fType]; ok {
+					log.Printf("!!!Struct of type %s already mapped. Using mapped value %v", fType, encodedStructs[fType])
+					sValue.childStruct = encodedStructs[fType]
 					sValue.childStruct.structName = sName
 					continue
 				}
@@ -106,17 +111,17 @@ func mapStructure(t reflect.Type, s *encodedStruct, parentName string) {
 				sMap := make(map[string]encodedField);
 				childStruct := &encodedStruct{structName:sName, fieldNames:sMap};
 				sValue.childStruct = childStruct;
-				mapStructure(field.Type, childStruct, field.Type.Name());
+				mapStructure(fType, childStruct, fType.Name());
 			break;
 			case reflect.Ptr:
 				//if we have a pointer we store the value it points to
-				fieldElem := field.Type.Elem()
+				fieldElem := fType.Elem()
 
 				if fieldElem.Kind() == reflect.Struct {
 					sMap := make(map[string]encodedField);
 					childStruct := &encodedStruct{structName:sName, fieldNames:sMap};
 					sValue.childStruct = childStruct;
-					mapStructure(fieldElem, childStruct, field.Type.Name());
+					mapStructure(fieldElem, childStruct, fType.Name());
 					break
 				}
 			fallthrough

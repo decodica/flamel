@@ -606,21 +606,18 @@ func ModelableFromID(ctx context.Context, m modelable, id int64) error {
 }
 
 //Reads data from the datastore and writes them into the modelable.
-//Writing into a modelable can happen only if the modelable is registered and has an ID.
+//Writing into a modelable can happen only if the modelable is registered.
 func Read(ctx context.Context, m modelable) (err error) {
-	if !m.getModel().Registered {
-		index(m);
-	}
 
 	opts := datastore.TransactionOptions{}
 	opts.XG = true;
 	opts.Attempts = 1;
 
-	/*err = loadFromMemcache(ctx, m);
+	err = loadFromMemcache(ctx, m);
 
 	if err == nil {
 		return err
-	}*/
+	}
 
 	err = datastore.RunInTransaction(ctx, func (ctx context.Context) error {
 		return read(ctx, m);

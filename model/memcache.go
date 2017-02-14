@@ -7,6 +7,7 @@ import (
 	//"log"
 	"fmt"
 	"reflect"
+	"log"
 )
 
 type KeyMap map[int]string;
@@ -24,7 +25,8 @@ func validCacheKey(key string) bool {
 	return valid;
 }
 
-//Saves a m representation to GAE memcache
+//Saves the modelable representation and all related references to memcache.
+//It assumes that there are no stale references
 func saveInMemcache(ctx context.Context, m modelable) (err error) {
 	//skip unregistered models
 	model := m.getModel();
@@ -49,16 +51,20 @@ func saveInMemcache(ctx context.Context, m modelable) (err error) {
 
 	for k, _ := range model.references {
 		ref := model.references[k];
+		r := ref.Modelable;
+		rm := r.getModel();
 
-		//if the reference is zero we ignore it
-		if isZero(ref) {
-			//try to delete the reference. If we have an error then continue
-			deleteFromMemcache(ctx, ref)
-			continue
+		//throw an error if the model key and the reference key do not coincide
+		if rm.key == nil {
+			return fmt.Errorf("Can't save to memcache. reference model key is nil for reference: %+v", ref);
 		}
 
-		rm := ref.getModel();
-		err = saveInMemcache(ctx, ref);
+		if rm.key != ref.Key {
+			return fmt.Errorf("Can't save to memcache. Key of the model doesn't equal the key of the reference for reference %+v", ref);
+		}
+
+
+		err = saveInMemcache(ctx, r);
 
 		if err != nil {
 			return err;
@@ -87,16 +93,12 @@ func saveInMemcache(ctx context.Context, m modelable) (err error) {
 func loadFromMemcache(ctx context.Context, m modelable) (err error) {
 	model := m.getModel();
 
-	//a modelable must be registered to be read from memcache[
-	if !model.Registered {
-		panic("Modelable not registered");
-	}
-
 	if model.key == nil {
 		return fmt.Errorf("No key registered from modelable %s. Can't load from memcache.", model.structName)
 	}
 
 	cKey := model.EncodedKey();
+
 	if !validCacheKey(cKey) {
 		return fmt.Errorf("cacheModel box key %s is too long", cKey);
 	}
@@ -104,14 +106,6 @@ func loadFromMemcache(ctx context.Context, m modelable) (err error) {
 	box := cacheModel{Keys:make(map[int]string), Modelable:m};
 
 	_, err = memcache.Gob.Get(ctx, cKey, &box);
-
-	//check for type equality
-	if reflect.TypeOf(box.Modelable) != reflect.TypeOf(m) {
-		return fmt.Errorf("Memcache found incompatible type for model: " +
-			"cached type was %s but %s was requested",
-			reflect.TypeOf(box.Modelable).Name(),
-			reflect.TypeOf(m).Name());
-	}
 
 	if err != nil {
 		return err;
@@ -123,19 +117,24 @@ func loadFromMemcache(ctx context.Context, m modelable) (err error) {
 			if err != nil {
 				return err;
 			}
+
 			ref := model.references[k];
-			rm := ref.getModel();
+			r := ref.Modelable;
+			rm := r.getModel();
 			rm.key = decodedKey;
-			err = loadFromMemcache(ctx, ref);
+
+			err = loadFromMemcache(ctx, ref.Modelable);
 			if err != nil {
 				return err;
 			}
+
+			ref.Key = decodedKey;
 			model.references[k] = ref;
 
-			//assign the reference values to the box contents.
+			//assign the reference values to the box struct.
 			//this needs to be done so that the passing modelable is updated
 			field := reflect.Indirect(reflect.ValueOf(box.Modelable)).Field(k);
-			src := reflect.Indirect(reflect.ValueOf(ref));
+			src := reflect.Indirect(reflect.ValueOf(r));
 			field.Set(src);
 		}
 	}
@@ -157,13 +156,14 @@ func loadFromMemcache(ctx context.Context, m modelable) (err error) {
 					break;
 				}
 			}
+			log.Printf("Modelable %+v read from memcache", m);
 		}
 	}(err)
 
 	return err;
 }
 
-func deleteFromMemcache(ctx context.Context, m modelable) (err error) {
+/*func deleteFromMemcache(ctx context.Context, m modelable) (err error) {
 	model := m.getModel();
 
 	//a modelable must be registered to be read from memcache[
@@ -189,7 +189,7 @@ func deleteFromMemcache(ctx context.Context, m modelable) (err error) {
 	}
 
 	return memcache.Delete(ctx, cKey);
-}
+}*/
 
 /*func (data) cacheGet() error {
 	if nil == data.key {

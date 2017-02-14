@@ -434,8 +434,6 @@ func toPropertyList(modelable modelable) ([]datastore.Property, error) {
 			continue;
 		}
 
-		log.Printf("Checking field type %s", field)
-
 		p := &datastore.Property{};
 		p.Name = referenceName(sType.Name(), field.Name);
 
@@ -451,8 +449,6 @@ func toPropertyList(modelable modelable) ([]datastore.Property, error) {
 		}
 
 		v := value.Field(i);
-
-		log.Printf("ToProperty List on field %+v ", v)
 		switch x := v.Interface().(type) {
 		case time.Time:
 			p.Value = x

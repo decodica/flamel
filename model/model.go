@@ -53,6 +53,8 @@ type Model struct {
 	//represents the mapping of the modelable containing this Model
 	*structure `model:"-"`
 
+	references map[int]reference `model:"-"`
+
 	key *datastore.Key `model:"-"`
 	//the embedding modelable
 	modelable modelable `model:"-"`
@@ -68,8 +70,6 @@ type reference struct {
 type structure struct {
 	//encoded struct represents the mapping of the struct
 	*encodedStruct
-	//references point
-	references map[int]reference
 }
 
 type Prototype interface {
@@ -163,18 +163,19 @@ func index(m modelable) {
 	name := mType.Name();
 
 	model := m.getModel();
+	key := model.key;
 
 	//check if the modelable structure has been already mapped
 	if model.structure == nil {
-		model = &Model{structure: &structure{}};
+		model.structure = &structure{};
 	}
-
-	log.Printf("Model is not nil %v", model);
 
 	model.modelable = m;
 	model.Registered = true;
-	model.key = m.getModel().key;
+	model.key = key;
 
+	//we assign the structure to the model.
+	//if we already mapped the same struct earlier we get it from the cache
 	if enStruct, ok := encodedStructs[mType]; ok {
 		model.structure.encodedStruct = enStruct;
 	} else {
@@ -185,55 +186,78 @@ func index(m modelable) {
 
 	model.structure.structName = name;
 
-	//log.Printf("Modelable struct has name %s", s.structName);
-	if model.structure.references == nil {
-		model.structure.references = make(map[int]reference);
-	}
+	if model.references == nil {
+		//if we have no references mapped we rebuild the mapping
+		model.references = make(map[int]reference);
 
-	//map the references of the model
-	for i := 0; i < obj.NumField(); i++ {
+		//map the references of the model
+		for i := 0; i < obj.NumField(); i++ {
 
-		fType := mType.Field(i);
+			fType := mType.Field(i);
 
-		if obj.Field(i).Type() == typeOfModel {
-			//skip mapping of the model
-			continue
-		}
-
-		tags := strings.Split(fType.Tag.Get(tag_domain), ",");
-		tagName := tags[0]
-
-		if tagName == tag_skip {
-			log.Printf("Field %s is skippable.", fType.Name);
-			continue
-		}
-
-		if tagName == tag_search {
-			//todo
-		}
-
-		if obj.Field(i).Kind() == reflect.Struct {
-
-			if !obj.Field(i).CanAddr() {
-				panic(fmt.Errorf("Unaddressable reference %v in Model", obj.Field(i)));
+			if obj.Field(i).Type() == typeOfModel {
+				//skip mapping of the model
+				continue
 			}
 
-			if rm, ok := obj.Field(i).Addr().Interface().(modelable); ok {
-				//we register the modelable
+			tags := strings.Split(fType.Tag.Get(tag_domain), ",");
+			tagName := tags[0]
 
-				index(rm);
-				//here the reference is registered
-				//if we already have the reference we update the modelable
-				if hr, ok := model.structure.references[i]; ok {
-					hr.Modelable = rm;
-					model.structure.references[i] = hr;
-				//else we create the reference and set the modelable
-				} else {
+			if tagName == tag_skip {
+				log.Printf("Field %s is skippable.", fType.Name);
+				continue
+			}
+
+			if tagName == tag_search {
+				//todo
+			}
+
+			if obj.Field(i).Kind() == reflect.Struct {
+
+				if !obj.Field(i).CanAddr() {
+					panic(fmt.Errorf("Unaddressable reference %v in Model", obj.Field(i)));
+				}
+
+				if rm, ok := obj.Field(i).Addr().Interface().(modelable); ok {
+					//we register the modelable
+
+					index(rm);
+					//here the reference is registered
+					//if we already have the reference we update the modelable
 					hr := reference{};
 					hr.Modelable = rm;
-					model.structure.references[i] = hr;
+					model.references[i] = hr;
+
 				}
 			}
+		}
+	//if we already have references we update the modelable they point to
+	} else {
+
+		for k, _ := range model.references {
+			ref := model.references[k];
+			//we get the old reference
+			orig := ref.Modelable;
+			//we get the new reference
+			newRef := obj.Field(k).Addr().Interface().(modelable);
+
+			if orig == newRef {
+				continue
+			}
+
+			om := orig.getModel();
+
+			nm := newRef.getModel();
+			nm.modelable = newRef;
+			nm.references = om.references;
+			nm.structure = om.structure;
+			nm.structName = om.structName;
+			newRef.setModel(*nm);
+
+			index(newRef)
+
+			ref.Modelable = newRef;
+			model.references[k] = ref;
 		}
 	}
 
@@ -335,6 +359,9 @@ func updateReference(ctx context.Context, ref *reference, key *datastore.Key) (e
 
 	model := ref.Modelable.getModel();
 
+	log.Printf("\n\nUpdating references for modelable %+v. ", ref.Modelable)
+	log.Printf("\n\nParent has keys %+v. ", model.references)
+
 	//we iterate through the references of the current model
 	for k, _ := range model.references {
 		r := model.references[k];
@@ -342,6 +369,7 @@ func updateReference(ctx context.Context, ref *reference, key *datastore.Key) (e
 		//We check if the parent has a key related to the reference.
 		//If it does we use the key provided by the parent to update the childrend
 		if r.Key != nil {
+			log.Printf("\n\nModel.references.key not nil for %v. Updating using parent refkey", r.Modelable)
 			err := updateReference(ctx, &r, r.Key);
 			if err != nil {
 				return err;
@@ -349,7 +377,8 @@ func updateReference(ctx context.Context, ref *reference, key *datastore.Key) (e
 		} else {
 			//else, if the parent doesn't have the key we must check the children
 			if rm.key != nil {
-				//the children was loaded and then assigned to the parent: update the children
+				log.Printf("\n\nChild.Model.key not nil for %v. Updating using child key", r.Modelable)
+				//the child was loaded and then assigned to the parent: update the children
 				//and make the parent point to it
 				err := updateReference(ctx, &r, rm.key);
 				if err != nil {
@@ -358,6 +387,7 @@ func updateReference(ctx context.Context, ref *reference, key *datastore.Key) (e
 			} else {
 				//neither the parent and the children specify a key.
 				//We create the children and update the parent's key
+				log.Printf("\n\nNo key available for %+v. Creating entity", r.Modelable)
 				err := createReference(ctx, &r);
 				if err != nil {
 					return err;
@@ -382,6 +412,7 @@ func updateReference(ctx context.Context, ref *reference, key *datastore.Key) (e
 }
 
 
+//creates a reference
 func createReference(ctx context.Context, ref *reference) (err error) {
 
 	err = create(ctx, ref.Modelable);
@@ -431,6 +462,9 @@ func read(ctx context.Context, m modelable) error {
 	return nil
 }
 
+//updates the given modelable
+//iterates through the modelable reference.
+//if the reference has a key
 func update(ctx context.Context, m modelable) error {
 	model := m.getModel();
 
@@ -523,14 +557,13 @@ func Create(ctx context.Context, m modelable) (err error) {
 }
 
 //Reads data from a modelable and writes it into the corresponding entity of the datastore.
-//If m is unregistered it will panic
-//In update operations unregistered references won't overwrite previous stored values.
-//As an example registering a modelable, change its reference, register the modelable again and
-// calling Update will cause references to be written twice: one for the first registered ref and the other for the updated reference.
+//If a reference is read from the storage and then assigned to the root modelable
+//the root modelable will point to the loaded entity
+//If a reference is newly created its value will be updated accordingly to the model
 func Update(ctx context.Context, m modelable) (err error) {
 	model := m.getModel();
+	log.Printf("Update called for modelable %+v. \n\n Model has keys %+v \n\n\n", m, model.references);
 
-	log.Printf("\n\n\nBefore indexing, Model has keys %+v \n\n\n", model.references);
 
 	if !model.Registered {
 		index(m);
@@ -539,16 +572,16 @@ func Update(ctx context.Context, m modelable) (err error) {
 		index(m);
 	}
 
-	log.Printf("Update called for model %+v. \n\n Model has keys %+v \n\n\n", m, model.references);
+	log.Printf("\n\nAfter indexing, modelable is %+v and has keys %+v \n\n\n", m, model.references);
 
-	/*defer func() {
+	defer func() {
 		if err == nil {
 			err = saveInMemcache(ctx, m);
 			if err != nil {
 				gaelog.Errorf(ctx, "Error saving items in memcache: %v", err);
 			}
 		}
-	}();*/
+	}();
 
 	opts := datastore.TransactionOptions{}
 	opts.XG = true;

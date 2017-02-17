@@ -10,21 +10,24 @@ import (
 	"google.golang.org/appengine/file"
 	"google.golang.org/appengine/image"
 	"google.golang.org/appengine/memcache"
-	"distudio.com/mage/model"
 )
 
 type mage struct {
 	//user factory
-	createUser     func() model.Authenticable
 	Config         MageConfig
 	app            Application
 	applicationSet bool
 }
 
+type Authenticable interface {
+	Authenticate(ctx context.Context, token string) error
+}
+
 type Application interface {
+	NewUser(ctx context.Context) Authenticable
 	OnCreate(ctx context.Context)
-	CreatePage(path string) (error, Page)
-	OnDestroy()
+	CreatePage(ctx context.Context, path string) (error, Page)
+	OnDestroy(ctx context.Context)
 }
 
 func (this *mage) LaunchApp(application Application) {
@@ -41,9 +44,6 @@ type MageConfig struct {
 	TokenExpirationKey     string
 	TokenExpiration        time.Duration
 	RequestUrlKey          string
-	//limit on read per batch.
-	ReadBatchCount int
-	Debug          bool
 }
 
 const (
@@ -54,8 +54,6 @@ const (
 
 //mage is a singleton
 var mageInstance *mage
-
-var request *http.Request
 
 var bucketName string
 
@@ -134,10 +132,6 @@ func MageInstance() *mage {
 	return mageInstance
 }
 
-func (mage *mage) SetAuthenticableFactory(factory func() model.Authenticable) {
-	mage.createUser = factory
-}
-
 func (mage *mage) Run(w http.ResponseWriter, req *http.Request) {
 
 	ctx := appengine.NewContext(req)
@@ -146,19 +140,21 @@ func (mage *mage) Run(w http.ResponseWriter, req *http.Request) {
 		panic("Must set MAGE Application!")
 	}
 
-	mage.app.OnCreate(ctx)
-	defer mage.app.OnDestroy()
+	mage.app.OnCreate(ctx);
+	defer mage.destroy(ctx);
 
-	err, page := mage.app.CreatePage(req.URL.Path)
+	//todo: should we use the app specific context?
+	err, page := mage.app.CreatePage(ctx, req.URL.Path);
 
 	if nil != err {
-		panic(err)
+		//todo: send a 500
+		panic(err);
 	}
 
-	user := mage.createUser()
+	user := mage.app.NewUser(ctx);
 
-	magePage := newGaemsPage(page, user)
-	defer magePage.finish()
+	magePage := newGaemsPage(page, user);
+	defer magePage.finish();
 
 	magePage.build(req)
 
@@ -170,7 +166,11 @@ func (mage *mage) Run(w http.ResponseWriter, req *http.Request) {
 	tkn, _ := req.Cookie(MageInstance().Config.TokenAuthenticationKey)
 
 	if tkn != nil {
-		magePage.currentUser.Authenticate(tkn.Value)
+		err := magePage.currentUser.Authenticate(ctx, tkn.Value)
+		if err != nil {
+			//todo hanle with a 500
+			panic(err);
+		}
 	}
 
 	redirect := magePage.page.Authorize()
@@ -198,5 +198,9 @@ func (mage *mage) Run(w http.ResponseWriter, req *http.Request) {
 		w.WriteHeader(redirect.Status)
 	}
 
-	magePage.output(w)
+	magePage.output(w);
+}
+
+func (mage *mage) destroy(ctx context.Context) {
+	mage.app.OnDestroy(ctx);
 }

@@ -5,7 +5,6 @@ import (
 	gaelog "google.golang.org/appengine/log"
 	"reflect"
 	"golang.org/x/net/context"
-	"log"
 	"fmt"
 	"errors"
 	"strings"
@@ -124,8 +123,6 @@ func (model *Model) hasStaleReferences() bool {
 	for k, _ := range model.references {
 		field := mv.Field(k);
 		if field.Interface() != m {
-			t := reflect.TypeOf(m).Elem().Field(k);
-			log.Printf("Modelable %+v at address %p has stale references for field of type %s", m, &m, t.Name);
 			return true;
 		}
 	}
@@ -195,7 +192,6 @@ func index(m modelable) {
 			tagName := tags[0]
 
 			if tagName == tag_skip {
-				log.Printf("Field %s is skippable.", fType.Name);
 				continue
 			}
 
@@ -224,7 +220,6 @@ func index(m modelable) {
 		}
 	//if we already have references we update the modelable they point to
 	} else {
-
 		for k, _ := range model.references {
 			ref := model.references[k];
 			//we get the old reference
@@ -260,9 +255,7 @@ func index(m modelable) {
 //Returns true if the modelable is zero.
 func isZero(ref modelable) bool {
 	model := ref.getModel();
-
 	v := reflect.Indirect(reflect.ValueOf(ref));
-	t := reflect.TypeOf(ref).Elem();
 	for i := 0; i < v.NumField(); i++ {
 		field := v.Field(i);
 		//ft := t.Field(i);
@@ -280,8 +273,6 @@ func isZero(ref modelable) bool {
 			}
 		}
 	}
-
-	log.Printf("\n !!!!Zero found for struct %s \n", t.Name());
 
 	return true;
 }
@@ -305,13 +296,11 @@ func create(ctx context.Context, m modelable) error {
 	for k, _ := range model.references {
 		ref := model.references[k];
 		rm := ref.Modelable.getModel();
-
 		if ref.Key != nil {
 			//this can't happen because we are in create, thus the root model can't have a key
 			//and can't have its reference's key populated
 			return errors.New("Create called with a non-nil reference map");
 		} else {
-
 			//case is that the reference has been loaded from the datastore
 			//we update the reference values using the reference key
 			//then we update the root reference map key
@@ -327,31 +316,20 @@ func create(ctx context.Context, m modelable) error {
 				}
 			}
 		}
-
 		model.references[k] = ref;
 	}
-
 	incompleteKey := datastore.NewIncompleteKey(ctx, model.structName, nil);
-
 	key, err := datastore.Put(ctx, incompleteKey, m);
-
 	if err != nil {
 		return err;
 	}
-
 	model.key = key;
 
 	return nil;
 }
 
-
-
 func updateReference(ctx context.Context, ref *reference, key *datastore.Key) (err error) {
-
 	model := ref.Modelable.getModel();
-
-	log.Printf("\n\nUpdating references for modelable %+v. ", ref.Modelable)
-	log.Printf("\n\nParent has keys %+v. ", model.references)
 
 	//we iterate through the references of the current model
 	for k, _ := range model.references {
@@ -360,7 +338,6 @@ func updateReference(ctx context.Context, ref *reference, key *datastore.Key) (e
 		//We check if the parent has a key related to the reference.
 		//If it does we use the key provided by the parent to update the childrend
 		if r.Key != nil {
-			log.Printf("\n\nModel.references.key not nil for %v. Updating using parent refkey", r.Modelable)
 			err := updateReference(ctx, &r, r.Key);
 			if err != nil {
 				return err;
@@ -368,7 +345,6 @@ func updateReference(ctx context.Context, ref *reference, key *datastore.Key) (e
 		} else {
 			//else, if the parent doesn't have the key we must check the children
 			if rm.key != nil {
-				log.Printf("\n\nChild.Model.key not nil for %v. Updating using child key", r.Modelable)
 				//the child was loaded and then assigned to the parent: update the children
 				//and make the parent point to it
 				err := updateReference(ctx, &r, rm.key);
@@ -378,7 +354,6 @@ func updateReference(ctx context.Context, ref *reference, key *datastore.Key) (e
 			} else {
 				//neither the parent and the children specify a key.
 				//We create the children and update the parent's key
-				log.Printf("\n\nNo key available for %+v. Creating entity", r.Modelable)
 				err := createReference(ctx, &r);
 				if err != nil {
 					return err;
@@ -405,7 +380,6 @@ func updateReference(ctx context.Context, ref *reference, key *datastore.Key) (e
 
 //creates a reference
 func createReference(ctx context.Context, ref *reference) (err error) {
-
 	err = create(ctx, ref.Modelable);
 
 	if err != nil {
@@ -438,16 +412,12 @@ func read(ctx context.Context, m modelable) error {
 	for k, _ := range model.references {
 		ref := model.references[k];
 		rm := ref.Modelable.getModel();
-
 		err := read(ctx, ref.Modelable);
 		if err != nil {
 			return err;
 		}
-
 		ref.Key = rm.key;
 		model.references[k] = ref;
-
-		log.Printf("\n Read reference for model which now has references %+v", model.references)
 	}
 
 	return nil
@@ -468,13 +438,11 @@ func update(ctx context.Context, m modelable) error {
 		rm := ref.Modelable.getModel();
 
 		if rm.key != nil {
-			log.Printf("\n Updating reference with own key. using key %s", rm.key.Encode())
 			err := updateReference(ctx, &ref, rm.key);
 			if err != nil {
 				return err;
 			}
 		} else {
-			log.Printf("\n Updating reference with parent key. using key %s", ref.Key.Encode())
 			err := updateReference(ctx, &ref, ref.Key);
 			if err != nil {
 				return err;
@@ -550,17 +518,12 @@ func Create(ctx context.Context, m modelable) (err error) {
 //If a reference is newly created its value will be updated accordingly to the model
 func Update(ctx context.Context, m modelable) (err error) {
 	model := m.getModel();
-	log.Printf("Update called for modelable %+v. \n\n Model has keys %+v \n\n\n", m, model.references);
-
-
 	if !model.Registered {
 		index(m);
 	//use elseif so we avoid checking for stale refs since the model has been registered one line above
 	} else if model.hasStaleReferences() {
 		index(m);
 	}
-
-	log.Printf("\n\nAfter indexing, modelable is %+v and has keys %+v \n\n\n", m, model.references);
 
 	defer func() {
 		if err == nil {
@@ -596,7 +559,6 @@ func ModelableFromID(ctx context.Context, m modelable, id int64) error {
 //Reads data from the datastore and writes them into the modelable.
 //Writing into a modelable can happen only if the modelable is registered.
 func Read(ctx context.Context, m modelable) (err error) {
-
 	opts := datastore.TransactionOptions{}
 	opts.XG = true;
 	opts.Attempts = 1;
@@ -615,7 +577,6 @@ func Read(ctx context.Context, m modelable) (err error) {
 }
 
 func Delete(ctx context.Context, m modelable) (err error) {
-
 	defer func() {
 		if err == nil {
 			err = deleteFromMemcache(ctx, m)
@@ -635,85 +596,3 @@ func Delete(ctx context.Context, m modelable) (err error) {
 
 	return err;
 }
-
-/*
-func nameOfModelable(m modelable) string {
-	return reflect.ValueOf(m).Elem().Type().String();
-}
-
-func makeRefname(base string) string {
-	return ref_model_prefix + base;
-}
-
-//retrieves up to datastore limits (currently 1000) entities from either memcache or datastore
-//each datamap must have the key already set
-func (data dataMaps) readMulti(ctx context.Context) {
-
-	//get the model keys
-	keys := data.Keys();
-	fromCache, err := data.cacheGetMulti(ctx, keys);
-
-	if err != nil {
-		log.Errorf(ctx, "Error retrieving multi from cache: %v", err);
-	}
-
-	c := 0;
-	if len(fromCache) < data.Len() {
-
-		leftCount := len(keys) - len(fromCache);
-
-		remainingKeys := make([]*datastore.Key, leftCount, leftCount);
-		dst := make([]*dataMap, leftCount, leftCount);
-
-		for i, k := range keys {
-			_, ok := fromCache[k];
-			if !ok {
-				//add the pointer to those keys that have to be retrieved
-				remainingKeys[c] = k;
-				dst[c] = data[i];
-				c++;
-			}
-		}
-
-		err = datastore.GetMulti(ctx, remainingKeys, dst);
-
-		if err != nil {
-			panic(err);
-		}
-	}
-
-	//now load the references of the model
-	data.cacheSetMulti(ctx);
-}
-
-//quick key value storage that allows saving of model key to memcache.
-//this allows for strong consistence storage.
-
-func (model *Model) SaveToKeyValue(key string) error {
-	i := &memcache.Item{};
-	i.Key = key;
-	i.Value = []byte(model.key.Encode());
-	err := memcache.Set(model.context, i);
-
-	if err == nil {
-		err = model.Update();
-	}
-
-	return err;
-}
-
-func (model *Model) LoadFromKeyValue(key string) error {
-	//recupero key da token in memcache
-	item, e := memcache.Get(model.context, key);
-
-	if e != nil {
-		return e;
-	}
-
-	userKey := string(item.Value);
-	model.key, _ = datastore.DecodeKey(userKey);
-
-	e = datastore.Get(model.context, model.key, model.dataMap);
-
-	return e;
-}*/

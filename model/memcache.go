@@ -7,7 +7,6 @@ import (
 	//"log"
 	"fmt"
 	"reflect"
-	"log"
 )
 
 type KeyMap map[int]string;
@@ -63,7 +62,6 @@ func saveInMemcache(ctx context.Context, m modelable) (err error) {
 			return fmt.Errorf("Can't save to memcache. Key of the model doesn't equal the key of the reference for reference %+v", ref);
 		}
 
-
 		err = saveInMemcache(ctx, r);
 
 		if err != nil {
@@ -117,20 +115,16 @@ func loadFromMemcache(ctx context.Context, m modelable) (err error) {
 			if err != nil {
 				return err;
 			}
-
 			ref := model.references[k];
 			r := ref.Modelable;
 			rm := r.getModel();
 			rm.key = decodedKey;
-
 			err = loadFromMemcache(ctx, ref.Modelable);
 			if err != nil {
 				return err;
 			}
-
 			ref.Key = decodedKey;
 			model.references[k] = ref;
-
 			//assign the reference values to the box struct.
 			//this needs to be done so that the passing modelable is updated
 			field := reflect.Indirect(reflect.ValueOf(box.Modelable)).Field(k);
@@ -138,7 +132,6 @@ func loadFromMemcache(ctx context.Context, m modelable) (err error) {
 			field.Set(src);
 		}
 	}
-
 
 	//if there are no error we assign the value recovered from memcache to the modelable
 	defer func(error) {
@@ -156,7 +149,6 @@ func loadFromMemcache(ctx context.Context, m modelable) (err error) {
 					break;
 				}
 			}
-			log.Printf("Modelable %+v read from memcache", m);
 		}
 	}(err)
 

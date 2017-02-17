@@ -6,7 +6,6 @@ import (
 	"reflect"
 	"fmt"
 	"github.com/pkg/errors"
-	"log"
 )
 
 type Query struct {
@@ -26,7 +25,6 @@ func NewQuery(m modelable) *Query {
 		dq: q,
 		mType: reflect.TypeOf(m).Elem(),
 	}
-	log.Printf("modelable is of type %s", query.mType.Name());
 	return &query;
 }
 
@@ -133,11 +131,9 @@ func (query *Query) GetAll(ctx context.Context, dst interface{}) error {
 }
 
 func (query *Query) get(ctx context.Context, dst interface{}) (*datastore.Cursor, error) {
-
 	more := false;
 	rc := 0;
 	it := query.dq.Run(ctx);
-	log.Printf("Datastore query is %+v", query.dq);
 
 	dstv := reflect.ValueOf(dst);
 
@@ -181,10 +177,7 @@ func (query *Query) get(ctx context.Context, dst interface{}) (*datastore.Cursor
 			query = nil;
 			return nil, err;
 		}
-
-		log.Printf("Found modelable %+v", m);
 		modelables.Set(reflect.Append(modelables, reflect.ValueOf(m)));
-
 		rc++;
 	}
 
@@ -194,7 +187,6 @@ func (query *Query) get(ctx context.Context, dst interface{}) (*datastore.Cursor
 	} else {
 		//else, if we still have entries, update cursor position
 		cursor, e := it.Cursor();
-
 		return &cursor, e;
 	}
 }
@@ -202,23 +194,17 @@ func (query *Query) get(ctx context.Context, dst interface{}) (*datastore.Cursor
 
 //container must be *[]modelable
 func isValidContainer(container reflect.Value) bool {
-	log.Printf("Container type is : %+v", container.Type());
 	if container.Kind() != reflect.Ptr {
-		log.Printf("Container is not a ptr. Container is of type: %+v", container.Type());
 		return false;
 	}
-
 	celv := container.Elem();
-
 	if celv.Kind() != reflect.Slice {
-		log.Printf("Container is not a slice. Container elem is of kind: %+v", celv.Kind());
 		return false;
 	}
 
 	cel := celv.Type().Elem();
 	ok := cel.Implements(typeOfModelable);
 	if !ok {
-		log.Printf("Container type %+v doesn't implement %+v.", cel, typeOfModelable);
 	}
 	return ok;
 }

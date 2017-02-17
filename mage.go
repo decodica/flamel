@@ -16,7 +16,6 @@ type mage struct {
 	//user factory
 	Config         MageConfig
 	app            Application
-	applicationSet bool
 }
 
 type Authenticable interface {
@@ -30,12 +29,11 @@ type Application interface {
 	OnDestroy(ctx context.Context)
 }
 
-func (this *mage) LaunchApp(application Application) {
-	if this.applicationSet {
+func (mage *mage) LaunchApp(application Application) {
+	if mage.app != nil {
 		panic("Application already set")
 	}
-	this.app = application
-	this.applicationSet = true
+	mage.app = application
 }
 
 type MageConfig struct {
@@ -50,6 +48,12 @@ const (
 	base_name        string = "base"
 	token_auth_key   string = "SSID"
 	token_expiry_key string = "SSID_EXP"
+
+	//request related special vars
+	REQUEST_USER = "mage-user";
+	REQUEST_INPUTS = "request-inputs";
+	REQUEST_METHOD = "method";
+	REQUEST_IPV4 = "remote-address";
 )
 
 //mage is a singleton
@@ -136,51 +140,45 @@ func (mage *mage) Run(w http.ResponseWriter, req *http.Request) {
 
 	ctx := appengine.NewContext(req)
 
-	if !mage.applicationSet {
+	if mage.app == nil {
 		panic("Must set MAGE Application!")
 	}
 
 	mage.app.OnCreate(ctx);
-	defer mage.destroy(ctx);
-
-	//todo: should we use the app specific context?
 	err, page := mage.app.CreatePage(ctx, req.URL.Path);
 
 	if nil != err {
-		//todo: send a 500
 		panic(err);
 	}
 
-	user := mage.app.NewUser(ctx);
+	magePage := newGaemsPage(page);
+	defer mage.destroy(ctx, magePage);
 
-	magePage := newGaemsPage(page, user);
-	defer magePage.finish();
+	//add inputs to the context object
+	ctx = magePage.build(ctx, req);
 
-	magePage.build(req)
 
-	//populate the user model
-	//todo: find a more elegant solution.
+	//todo: add middleware to care of authentication?
 	//using the cookie object prevents client application to use
 	//non-cookie tokens (es. json-rpc with x-sign in header pattern
-
 	tkn, _ := req.Cookie(MageInstance().Config.TokenAuthenticationKey)
 
 	if tkn != nil {
-		err := magePage.currentUser.Authenticate(ctx, tkn.Value)
+		user := mage.app.NewUser(ctx);
+		err := user.Authenticate(ctx, tkn.Value)
 		if err != nil {
-			//todo hanle with a 500
-			panic(err);
+			user = nil;
 		}
+		//put the user into the context together with the other params
+		ctx = context.WithValue(ctx, REQUEST_USER, user);
 	}
 
-	redirect := magePage.page.Authorize()
+	redirect := magePage.process(ctx, req);
 
 	if redirect.Status != http.StatusOK {
 		http.Redirect(w, req, redirect.Location, redirect.Status)
 		return
 	}
-
-	magePage.process(req)
 
 	//add headers and cookies
 	for _, v := range magePage.out.cookies {
@@ -192,15 +190,10 @@ func (mage *mage) Run(w http.ResponseWriter, req *http.Request) {
 		w.Header().Set(k, v)
 	}
 
-	redirect = magePage.out.Redirect
-	if redirect.Status != http.StatusOK {
-		w.Header().Set("Location", redirect.Location)
-		w.WriteHeader(redirect.Status)
-	}
-
-	magePage.output(w);
+	magePage.out.Renderer.Render(w);
 }
 
-func (mage *mage) destroy(ctx context.Context) {
+func (mage *mage) destroy(ctx context.Context, page *magePage) {
+	page.page.OnDestroy(ctx);
 	mage.app.OnDestroy(ctx);
 }

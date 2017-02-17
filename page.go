@@ -1,47 +1,35 @@
  package mage
 
 import (
-	"html/template"
 	"net/http"
-	"encoding/json"
-	"io"
 	"io/ioutil"
-	"google.golang.org/appengine"
-	"google.golang.org/appengine/blobstore"
+	"golang.org/x/net/context"
 )
 
 type RequestInputs map[string]requestInput;
 
 
 type magePage struct {
-	query       RequestInputs
 	page        Page
-	currentUser Authenticable
-	out         *RequestOutput;
+	out         RequestOutput;
 }
 
 type Page interface {
-	//todo:: OnCreate(context and input)
-	//todo: remove draw
-
-	OnCreate(user Authenticable);
-	Draw() interface{};
-	Build(in RequestInputs);
-	Process(out *RequestOutput);
-	//returns false if the user doesn't require authentication
-	//returns true otherwise
-	Authorize() Redirect;
-	//Called after the response has been set. Used to cleaup resources
-	OnFinish();
+	//the page logic is executed here
+	//if the user is valid it is recoverable from the context
+	//else the user is nil
+	Process(ctx context.Context, out *RequestOutput) Redirect;
+	//called to release resources
+	OnDestroy(ctx context.Context);
 }
 
-func newGaemsPage(page Page, user Authenticable) *magePage {
-	p := &magePage{page:page, currentUser:user};
-	page.OnCreate(p.currentUser);
+func newGaemsPage(page Page) *magePage {
+	p := &magePage{page:page};
 	return p;
 }
 
-func (page *magePage) build(req *http.Request) {
+func (page *magePage) build(ctx context.Context, req *http.Request) context.Context {
+
 	reqValues := make(map[string]requestInput);
 
 	//todo: put in context
@@ -49,14 +37,15 @@ func (page *magePage) build(req *http.Request) {
 	m := make([]string, 1, 1);
 	m[0] = req.Method;
 	method.values = m;
-	reqValues["method"] = method;
+	reqValues[REQUEST_METHOD] = method;
+
 
 	ipV := requestInput{};
 	ip := make([]string, 0);
 	//todo: how app-engine logs this?
 	ip = append(ip, req.RemoteAddr);
 	ipV.values = ip;
-	reqValues["remote-address"] = ipV;
+	reqValues[REQUEST_IPV4] = ipV;
 
 	//get request params
 	switch req.Method {
@@ -112,7 +101,6 @@ func (page *magePage) build(req *http.Request) {
 	}
 
 	//get the headers
-	//todo: put in context
 	for k, _ := range req.Header {
 		i := requestInput{};
 		s := make([]string, 1, 1);
@@ -122,12 +110,8 @@ func (page *magePage) build(req *http.Request) {
 	}
 
 	//get cookies
-	//todo: put in context
 	for _, c := range req.Cookies() {
 		//threat the auth token apart
-		if c.Name == MageInstance().Config.TokenAuthenticationKey {
-			continue;
-		}
 		i := requestInput{};
 		s := make([]string, 1, 1);
 		s[0] = c.Value;
@@ -135,76 +119,14 @@ func (page *magePage) build(req *http.Request) {
 		reqValues[c.Name] = i;
 	}
 
-	//get cookie token
-	//todo: put in context
-	tokenCookie, tokenErr := req.Cookie(MageInstance().Config.TokenAuthenticationKey);
-	i := requestInput{};
 
-	if nil == tokenErr {
-		s := make([]string, 1, 1);
-		s[0] = tokenCookie.Value;
-		i.values = s;
-	}
-
-	reqValues[(MageInstance().Config.TokenAuthenticationKey)] = i;
-
-	page.query = reqValues;
-	page.page.Build(page.query);
+	return context.WithValue(ctx, REQUEST_INPUTS, reqValues);
 }
 
-func (page *magePage) process(req *http.Request) {
-	page.out = newRequestOutput(req);
+func (page *magePage) process(ctx context.Context, req *http.Request) Redirect {
+	//create and package the request
+	page.build(ctx, req);
 
-	page.page.Process(page.out);
-}
-
-func (page magePage) input(key string) (requestInput, bool) {
-	v, ok := page.query[key];
-	return v, ok;
-}
-
-func (page *magePage) output(w http.ResponseWriter) {
-
-	if page.out.Error != nil {
-		//todo sostituire con template
-		panic(page.out.Error);
-	}
-
-	drawable := page.page.Draw();
-
-	switch (page.out.PayloadType) {
-		case HTML:
-			t, ok := drawable.(*template.Template);
-			if !ok {
-				http.Error(w, "Invalid template", http.StatusInternalServerError );
-				return;
-			}
-			err := t.ExecuteTemplate(w, page.out.TplName, page.out.Payload)
-			if err != nil {
-				panic(err);
-			}
-		break;
-		case JSON:
-			json.NewEncoder(w).Encode(page.out.Payload);
-		break;
-		case TEXT:
-			str, ok := page.out.Payload.(string);
-			if !ok {
-				return;
-			}
-			io.WriteString(w, str);
-		break;
-		case BLOB:
-			key, ok := page.out.Payload.(appengine.BlobKey);
-			if !ok {
-				//todo: panic
-				return;
-			}
-			blobstore.Send(w, key);
-		break;
-	}
-}
-
-func (page *magePage) finish() {
-	page.page.OnFinish();
+	page.out = newRequestOutput();
+	return page.page.Process(ctx, &page.out);
 }

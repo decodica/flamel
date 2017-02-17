@@ -4,14 +4,12 @@ import (
 	"distudio.com/mage/model"
 	"golang.org/x/net/context"
 	"fmt"
-	"distudio.com/mage"
 )
 
 type UserType int64;
 
 //Default user for mage applications.
 type User struct {
-	mage.Authenticable `datastore:"-"`
 	model.Model
 	Username   string
 	Password   string
@@ -19,7 +17,7 @@ type User struct {
 	UserType   UserType
 }
 
-func NewUser(ctx context.Context) mage.Authenticable {
+func NewUser(ctx context.Context) *User {
 	return &User{};
 }
 
@@ -27,7 +25,7 @@ func NewUser(ctx context.Context) mage.Authenticable {
 func (user *User) Authenticate(ctx context.Context, token string) error {
 	//recupero key da token in memcache
 	query := model.NewQuery(user);
-	query.WithField("Token = ", token);
+	query.WithField("Token =", token);
 
 	res := make([]*User, 0);
 
@@ -43,7 +41,12 @@ func (user *User) Authenticate(ctx context.Context, token string) error {
 		return fmt.Errorf("Found %d users for token %s. Invalid access", len(res), token);
 	}
 
-	user = res[0];
+	if len(res) < 1 {
+		user.Logout();
+		return fmt.Errorf("Found no users for token %s. Invalid access", token);
+	}
+
+	*user = *(res[0]);
 	user.Token = token;
 	return nil;
 }

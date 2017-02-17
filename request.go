@@ -5,32 +5,7 @@ import (
 	"time"
 )
 
-type RequestType int64
-
-//used to tell the server what kind of data to expect
-type PayloadType int64
-
 type requestItem int64
-
-const (
-	EXTRA requestItem = iota
-	HEADER
-)
-
-const (
-	GET RequestType = iota
-	POST
-	PUT
-	DELETE
-)
-
-const (
-	HTML PayloadType = iota
-	JSON
-	XML
-	TEXT
-	BLOB
-)
 
 type requestInput struct {
 	values      []string
@@ -63,14 +38,20 @@ type Redirect struct {
 	Location string
 }
 
+type Renderer interface {
+	Render(w http.ResponseWriter) error
+}
+
 type RequestOutput struct {
 	cookies     []*http.Cookie
 	headers     map[string]string
-	PayloadType PayloadType
-	Payload     interface{}
-	Error       error
-	TplName     string
-	Redirect    Redirect
+	Renderer    Renderer
+}
+
+func newRequestOutput() RequestOutput {
+	out := RequestOutput{}
+	out.headers = make(map[string]string)
+	return out
 }
 
 func (out *RequestOutput) SetHeader(key string, value string) error {
@@ -105,13 +86,4 @@ func (out *RequestOutput) RemoveCookie(name string) {
 	cookie.Expires = expires;
 	cookie.MaxAge = 0;
 	out.SetCookie(cookie);
-}
-
-func newRequestOutput(req *http.Request) *RequestOutput {
-	out := &RequestOutput{}
-	out.headers = make(map[string]string)
-	out.PayloadType = TEXT
-	out.TplName = base_name
-	out.Redirect = Redirect{Status: http.StatusOK, Location: ""}
-	return out
 }

@@ -24,7 +24,7 @@ type Authenticable interface {
 
 type Application interface {
 	NewUser(ctx context.Context) Authenticable
-	OnCreate(ctx context.Context)
+	OnCreate(ctx context.Context) context.Context
 	CreatePage(ctx context.Context, path string) (error, Page)
 	OnDestroy(ctx context.Context)
 }
@@ -138,13 +138,13 @@ func MageInstance() *mage {
 
 func (mage *mage) Run(w http.ResponseWriter, req *http.Request) {
 
-	ctx := appengine.NewContext(req)
-
 	if mage.app == nil {
 		panic("Must set MAGE Application!")
 	}
 
-	mage.app.OnCreate(ctx);
+	ctx := appengine.NewContext(req)
+
+	ctx = mage.app.OnCreate(ctx);
 	err, page := mage.app.CreatePage(ctx, req.URL.Path);
 
 	if nil != err {

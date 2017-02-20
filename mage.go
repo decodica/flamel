@@ -54,6 +54,7 @@ const (
 	REQUEST_INPUTS = "request-inputs";
 	REQUEST_METHOD = "method";
 	REQUEST_IPV4 = "remote-address";
+	REQUEST_JSON_DATA = "__json__"
 )
 
 //mage is a singleton

@@ -70,7 +70,7 @@ func (page *magePage) build(ctx context.Context, req *http.Request) context.Cont
 				str, _ := ioutil.ReadAll(req.Body);
 				s[0] = string(str);
 				i.values = s;
-				reqValues["json"] = i;
+				reqValues[REQUEST_JSON_DATA] = i;
 				break;
 			}
 

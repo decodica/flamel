@@ -50,6 +50,16 @@ func (q *Query) WithModelable(field string, ref modelable) (*Query, error) {
 	return q.WithField(fmt.Sprintf("%s = ", refName), refm.key), nil;
 }
 
+func (q *Query) WithAncestor(ancestor modelable) (*Query, error) {
+	am := ancestor.getModel();
+	if am.key == nil {
+		return nil, fmt.Errorf("Invalid ancestor. %s has empty key", ancestor.getModel().Name());
+	}
+
+	q.dq = q.dq.Ancestor(am.key);
+	return q, nil;
+}
+
 func (q *Query) WithField(field string, value interface{}) *Query {
 	prepared := entityPropName(q.mType.Name(), field);
 	q.dq = q.dq.Filter(prepared, value);

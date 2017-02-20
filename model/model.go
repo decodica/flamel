@@ -27,6 +27,7 @@ const default_entry_count_per_read_batch int = 500;
 const tag_skip string = "-";
 const tag_search string = "search";
 const tag_noindex string = "noindex";
+const tag_ancestor string = "ancestor";
 
 type modelable interface {
 	getModel() *Model
@@ -55,6 +56,7 @@ type Model struct {
 type reference struct {
 	Modelable modelable
 	Key *datastore.Key
+	Ancestor bool
 }
 
 type structure struct {
@@ -135,8 +137,9 @@ func (reference *reference) isStale() bool {
 func index(m modelable) {
 
 	mType := reflect.TypeOf(m).Elem();
-	//retrieve modelable anagraphics
 	obj := reflect.ValueOf(m).Elem();
+	//retrieve modelable anagraphics
+
 	name := mType.Name();
 
 	model := m.getModel();
@@ -148,7 +151,6 @@ func index(m modelable) {
 	}
 
 	model.modelable = m;
-	model.Registered = true;
 	model.key = key;
 
 	//we assign the structure to the model.
@@ -162,6 +164,8 @@ func index(m modelable) {
 	}
 
 	model.structure.structName = name;
+
+	hasAncestor := false;
 
 	if model.references == nil {
 		//if we have no references mapped we rebuild the mapping
@@ -196,12 +200,24 @@ func index(m modelable) {
 
 				if rm, ok := obj.Field(i).Addr().Interface().(modelable); ok {
 					//we register the modelable
+					isAnc := tagName == tag_ancestor;
+
+					if isAnc {
+						//flag the index as the ancestor
+						//if already has an ancestor we throw an error
+						if hasAncestor {
+							err := fmt.Errorf("Multiple ancestors set for model of type %s", mType.Name());
+							panic(err);
+						}
+						hasAncestor = true;
+					}
 
 					index(rm);
 					//here the reference is registered
 					//if we already have the reference we update the modelable
 					hr := reference{};
 					hr.Modelable = rm;
+					hr.Ancestor = isAnc;
 					model.references[i] = hr;
 
 				}
@@ -239,6 +255,7 @@ func index(m modelable) {
 	m.setModel(*model);
 
 	gob.Register(model.modelable);
+	model.Registered = true;
 }
 
 //Returns true if the modelable is zero.
@@ -280,6 +297,7 @@ func create(ctx context.Context, m modelable) error {
 		return errors.New("data has already been created");
 	}
 
+	var ancKey *datastore.Key = nil;
 	//we iterate through the model references.
 	//if a reference has its own key we use it as a value in the root entity
 	for k, _ := range model.references {
@@ -305,9 +323,12 @@ func create(ctx context.Context, m modelable) error {
 				}
 			}
 		}
+		if ref.Ancestor {
+			ancKey = ref.Key;
+		}
 		model.references[k] = ref;
 	}
-	incompleteKey := datastore.NewIncompleteKey(ctx, model.structName, nil);
+	incompleteKey := datastore.NewIncompleteKey(ctx, model.structName, ancKey);
 	key, err := datastore.Put(ctx, incompleteKey, m);
 	if err != nil {
 		return err;

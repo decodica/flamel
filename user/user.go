@@ -59,4 +59,3 @@ func (user User) IsAuthenticated() bool {
 func (user *User) Logout() {
 	user.Token = "";
 }
-

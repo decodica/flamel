@@ -54,12 +54,12 @@ func newRequestOutput() RequestOutput {
 	return out
 }
 
-func (out *RequestOutput) SetHeader(key string, value string) error {
+func (out *RequestOutput) AddHeader(key string, value string) error {
 	out.headers[key] = value
 	return nil
 }
 
-func (out *RequestOutput) SetCookie(cookie http.Cookie) {
+func (out *RequestOutput) AddCookie(cookie http.Cookie) {
 	out.cookies = append(out.cookies, &cookie)
 }
 
@@ -85,5 +85,5 @@ func (out *RequestOutput) RemoveCookie(name string) {
 	cookie.Name = name;
 	cookie.Expires = expires;
 	cookie.MaxAge = 0;
-	out.SetCookie(cookie);
+	out.AddCookie(cookie);
 }

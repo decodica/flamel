@@ -62,17 +62,6 @@ type structure struct {
 	*encodedStruct
 }
 
-type Prototype interface {
-	datastorable
-}
-
-type datastorable interface {
-	create() error
-	read() error
-	update() error
-	delete() error
-}
-
 //Model satisfies modelable
 //Returns the current Model.
 func (model *Model) getModel() *Model {

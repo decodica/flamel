@@ -32,7 +32,7 @@ func newGaemsPage(page Page) *magePage {
 
 func (page *magePage) build(ctx context.Context, req *http.Request) context.Context {
 
-	reqValues := make(map[string]requestInput);
+	reqValues := make(RequestInputs);
 
 	//todo: put in context
 	method := requestInput{};
@@ -131,4 +131,10 @@ func (page *magePage) process(ctx context.Context, req *http.Request) Redirect {
 
 	page.out = newRequestOutput();
 	return page.page.Process(ctx, &page.out);
+}
+
+
+func InputsFromContext(ctx context.Context) RequestInputs {
+	inputs := ctx.Value(REQUEST_INPUTS).(RequestInputs);
+	return inputs;
 }

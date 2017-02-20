@@ -175,11 +175,6 @@ func (mage *mage) Run(w http.ResponseWriter, req *http.Request) {
 
 	redirect := magePage.process(ctx, req);
 
-	if redirect.Status != http.StatusOK {
-		http.Redirect(w, req, redirect.Location, redirect.Status)
-		return
-	}
-
 	//add headers and cookies
 	for _, v := range magePage.out.cookies {
 		http.SetCookie(w, v)
@@ -188,6 +183,11 @@ func (mage *mage) Run(w http.ResponseWriter, req *http.Request) {
 	//add the redirect header if needed
 	for k, v := range magePage.out.headers {
 		w.Header().Set(k, v)
+	}
+
+	if redirect.Status != http.StatusOK {
+		http.Redirect(w, req, redirect.Location, redirect.Status)
+		return
 	}
 
 	magePage.out.Renderer.Render(w);

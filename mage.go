@@ -18,6 +18,10 @@ type mage struct {
 	app            Application
 }
 
+type Authenticator interface {
+	Authenticate(ctx context.Context, user Authenticable) context.Context
+}
+
 type Authenticable interface {
 	Authenticate(ctx context.Context, token string) error
 }
@@ -27,6 +31,7 @@ type Application interface {
 	OnCreate(ctx context.Context) context.Context
 	CreatePage(ctx context.Context, path string) (error, Page)
 	OnDestroy(ctx context.Context)
+	AuthenticatorForPath(path string) Authenticator
 }
 
 func (mage *mage) LaunchApp(application Application) {
@@ -159,19 +164,11 @@ func (mage *mage) Run(w http.ResponseWriter, req *http.Request) {
 	ctx = magePage.build(ctx, req);
 
 
-	//todo: add middleware to care of authentication?
-	//using the cookie object prevents client application to use
-	//non-cookie tokens (es. json-rpc with x-sign in header pattern
-	tkn, _ := req.Cookie(MageInstance().Config.TokenAuthenticationKey)
+	authenticator := mage.app.AuthenticatorForPath(req.URL.Path);
 
-	if tkn != nil {
+	if authenticator != nil {
 		user := mage.app.NewUser(ctx);
-		err := user.Authenticate(ctx, tkn.Value)
-		if err != nil {
-			user = nil;
-		}
-		//put the user into the context together with the other params
-		ctx = context.WithValue(ctx, REQUEST_USER, user);
+		ctx = authenticator.Authenticate(ctx, user);
 	}
 
 	redirect := magePage.process(ctx, req);

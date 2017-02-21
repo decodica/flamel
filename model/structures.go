@@ -242,9 +242,8 @@ func decodeField(s reflect.Value, p datastore.Property, encodedField encodedFiel
 					decodeField(field.Addr(), p, attr, l)
 				}
 				//else go down one level
-				baseName := baseName(p.Name);
-
-				if attr, ok := encodedField.childStruct.fieldNames[baseName]; ok {
+				cName := childName(p.Name);
+				if attr, ok := encodedField.childStruct.fieldNames[cName]; ok {
 					decodeField(field.Addr(), p, attr, l);
 				}
 				return nil;
@@ -353,6 +352,20 @@ func pureName(fullName string) string {
 	return fullName;
 }
 
+func childName(fullName string) string {
+	firstIndex := strings.Index(fullName, val_serparator);
+	if firstIndex > 0 {
+		return fullName[firstIndex + 1:];
+	}
+	return fullName
+}
+
+//returns the name one level above,
+//for example Parent.Child.Granchild -> Parent.Child
+/*func aboveName(fullName string) string {
+
+}*/
+
 
 func toPropertyList(modelable modelable) ([]datastore.Property, error) {
 	value := reflect.ValueOf(modelable).Elem();
@@ -457,6 +470,7 @@ func fromPropertyList(modelable modelable, props []datastore.Property) error {
 	for _, p := range props {
 		//if we have a reference we set the key in the corresponding model index
 		//to be processed later within datastore transaction
+
 		if key, ok := p.Value.(*datastore.Key); ok {
 			if field, ok := sType.FieldByName(pureName(p.Name)); ok {
 				ref := model.references[field.Index[0]];
@@ -467,6 +481,7 @@ func fromPropertyList(modelable modelable, props []datastore.Property) error {
 			return fmt.Errorf("No reference found at name %s for type %s. PureName is %s", p.Name, sType, pureName(p.Name));
 		}
 		//load first level values.
+		//log.Printf("Attempt to read prop %s in fieldNames %+v", p.Name, model.fieldNames);
 		if attr, ok := model.fieldNames[p.Name]; ok {
 			//decode the field if its a plain value (no struct, no pointer, no slice, not sure about map)
 			if attr.childStruct == nil {
@@ -479,7 +494,8 @@ func fromPropertyList(modelable modelable, props []datastore.Property) error {
 		}
 		//if is not in the first level get the first level name
 		//firstLevelName := strings.Split(p.Name, ".")[0];
-		if attr, ok := model.fieldNames[pureName(p.Name)]; ok {
+		baseName := baseName(p.Name);
+		if attr, ok := model.fieldNames[baseName]; ok {
 			err := decodeField(reflect.ValueOf(modelable), p, attr, pl);
 			if nil != err {
 				return err;

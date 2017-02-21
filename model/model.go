@@ -150,7 +150,10 @@ func index(m modelable) {
 		model.structure = &structure{};
 	}
 
+	//set the model to point to the new modelable
+	//in case it was previously pointing to the old one
 	model.modelable = m;
+	model.Registered = true;
 	model.key = key;
 
 	//we assign the structure to the model.
@@ -215,11 +218,11 @@ func index(m modelable) {
 					index(rm);
 					//here the reference is registered
 					//if we already have the reference we update the modelable
+
 					hr := reference{};
 					hr.Modelable = rm;
 					hr.Ancestor = isAnc;
 					model.references[i] = hr;
-
 				}
 			}
 		}
@@ -227,6 +230,7 @@ func index(m modelable) {
 	} else {
 		for k, _ := range model.references {
 			ref := model.references[k];
+
 			//we get the old reference
 			orig := ref.Modelable;
 			//we get the new reference
@@ -255,7 +259,6 @@ func index(m modelable) {
 	m.setModel(*model);
 
 	gob.Register(model.modelable);
-	model.Registered = true;
 }
 
 //Returns true if the modelable is zero.
@@ -328,6 +331,7 @@ func create(ctx context.Context, m modelable) error {
 		}
 		model.references[k] = ref;
 	}
+
 	incompleteKey := datastore.NewIncompleteKey(ctx, model.structName, ancKey);
 	key, err := datastore.Put(ctx, incompleteKey, m);
 	if err != nil {

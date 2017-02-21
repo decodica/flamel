@@ -15,15 +15,12 @@ type Query struct {
 }
 
 func NewQuery(m modelable) *Query {
-	model := m.getModel();
-	if !model.Registered {
-		index(m);
-	}
+	typ := reflect.TypeOf(m).Elem();
 
-	q := datastore.NewQuery(model.structName);
+	q := datastore.NewQuery(typ.Name());
 	query := Query{
 		dq: q,
-		mType: reflect.TypeOf(m).Elem(),
+		mType: typ,
 	}
 	return &query;
 }

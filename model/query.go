@@ -98,6 +98,7 @@ func (q *Query) First(ctx context.Context, m modelable) (err error) {
 	if len(mm) > 0 {
 		src := reflect.Indirect(reflect.ValueOf(mm[0]));
 		reflect.Indirect(reflect.ValueOf(m)).Set(src);
+		index(m);
 		return nil;
 	}
 
@@ -174,6 +175,9 @@ func (query *Query) get(ctx context.Context, dst interface{}) (*datastore.Cursor
 			return nil, err
 		}
 
+		//todo Note: indexing here assigns the address of m to the Model.
+		//this means that if a user supplied a populated dst we must reindex its elements before returning
+		//or the model will point to a different modelable
 		index(m);
 
 		model := m.getModel()

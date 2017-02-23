@@ -148,6 +148,8 @@ func encodeStruct(s interface{}, props *[]datastore.Property, multiple bool, cod
 		p.Multiple = multiple;
 
 		p.Name = referenceName(name, field.Name);
+
+
 		switch x := v.Interface().(type) {
 			case time.Time:
 				p.Value = x
@@ -494,8 +496,9 @@ func fromPropertyList(modelable modelable, props []datastore.Property) error {
 		}
 		//if is not in the first level get the first level name
 		//firstLevelName := strings.Split(p.Name, ".")[0];
-		baseName := baseName(p.Name);
-		if attr, ok := model.fieldNames[baseName]; ok {
+
+		bname := baseName(p.Name);
+		if attr, ok := model.fieldNames[bname]; ok {
 			err := decodeField(reflect.ValueOf(modelable), p, attr, pl);
 			if nil != err {
 				return err;

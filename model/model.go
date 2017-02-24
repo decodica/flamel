@@ -107,13 +107,15 @@ func (model *Model) Load(props []datastore.Property) error {
 }
 
 //returns true if the model has stale references
+//todo: control validity - this may be incorrect with equality
 func (model *Model) hasStaleReferences() bool {
 	m := model.modelable;
 	mv := reflect.Indirect(reflect.ValueOf(m));
 
 	for k, _ := range model.references {
 		field := mv.Field(k);
-		if field.Interface() != m {
+		ref := model.references[k];
+		if field.Interface() != ref.Modelable {
 			return true;
 		}
 	}

@@ -100,7 +100,7 @@ func mapStructure(t reflect.Type, s *encodedStruct, parentName string) {
 				sMap := make(map[string]encodedField);
 				childStruct := &encodedStruct{structName:sName, fieldNames:sMap};
 				sValue.childStruct = childStruct;
-				mapStructure(fType, childStruct, fType.Name());
+				mapStructure(fType, childStruct, field.Name);
 			break;
 			case reflect.Ptr:
 				//if we have a pointer we store the value it points to
@@ -109,7 +109,7 @@ func mapStructure(t reflect.Type, s *encodedStruct, parentName string) {
 					sMap := make(map[string]encodedField);
 					childStruct := &encodedStruct{structName:sName, fieldNames:sMap};
 					sValue.childStruct = childStruct;
-					mapStructure(fieldElem, childStruct, fType.Name());
+					mapStructure(fieldElem, childStruct, field.Name);
 					break
 				}
 			fallthrough
@@ -124,7 +124,6 @@ func mapStructure(t reflect.Type, s *encodedStruct, parentName string) {
 			default:
 			break;
 		}
-
 		s.fieldNames[sName] = sValue;
 	}
 	encodedStructs[t] = s;
@@ -209,7 +208,7 @@ type propertyLoader struct {
 }
 
 //parentEncodedField represents a field of interface{} s
-func decodeField(s reflect.Value, p datastore.Property, encodedField encodedField, l propertyLoader) error {
+func decodeField(s reflect.Value, p datastore.Property, encodedField encodedField, l *propertyLoader) error {
 	interf := s;
 	if (s.Kind() == reflect.Ptr) {
 		interf = s.Elem();
@@ -314,7 +313,16 @@ func decodeField(s reflect.Value, p datastore.Property, encodedField encodedFiel
 					sliceElem := reflect.New(field.Type().Elem()).Elem();
 					field.Set(reflect.Append(field, sliceElem));
 				}
-				decodeField(field.Index(index), p, encodedField.childStruct.fieldNames[p.Name], l);
+
+				if attr, ok := encodedField.childStruct.fieldNames[p.Name]; ok {
+					decodeField(field.Index(index), p, attr, l)
+				}
+				//else go down one level
+				cName := childName(p.Name);
+				if attr, ok := encodedField.childStruct.fieldNames[cName]; ok {
+
+					decodeField(field.Index(index), p, attr, l);
+				}
 				break;
 			}
 
@@ -487,7 +495,7 @@ func fromPropertyList(modelable modelable, props []datastore.Property) error {
 		if attr, ok := model.fieldNames[p.Name]; ok {
 			//decode the field if its a plain value (no struct, no pointer, no slice, not sure about map)
 			if attr.childStruct == nil {
-				err := decodeField(reflect.ValueOf(modelable), p, attr, pl);
+				err := decodeField(reflect.ValueOf(modelable), p, attr, &pl);
 				if nil != err {
 					return err;
 				}
@@ -499,7 +507,7 @@ func fromPropertyList(modelable modelable, props []datastore.Property) error {
 
 		bname := baseName(p.Name);
 		if attr, ok := model.fieldNames[bname]; ok {
-			err := decodeField(reflect.ValueOf(modelable), p, attr, pl);
+			err := decodeField(reflect.ValueOf(modelable), p, attr, &pl);
 			if nil != err {
 				return err;
 			}

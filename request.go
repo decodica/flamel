@@ -51,6 +51,7 @@ type RequestOutput struct {
 func newRequestOutput() RequestOutput {
 	out := RequestOutput{}
 	out.headers = make(map[string]string)
+	out.Renderer = &TextRenderer{Data:""};
 	return out
 }
 

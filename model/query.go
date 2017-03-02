@@ -105,6 +105,25 @@ func (q *Query) First(ctx context.Context, m modelable) (err error) {
 	return datastore.ErrNoSuchEntity;
 }
 
+func (query *Query) Get(ctx context.Context, dst interface{}) error {
+	if query.dq == nil {
+		return errors.New("Invalid query. Query is nil");
+	}
+
+	query.dq = query.dq.KeysOnly();
+	defer func() {
+		query = nil;
+	}()
+
+	_, err := query.get(ctx, dst);
+
+	if err != nil && err != datastore.Done {
+		return err;
+	}
+
+	return nil;
+}
+
 func (query *Query) GetAll(ctx context.Context, dst interface{}) error {
 
 	if query.dq == nil {
@@ -112,6 +131,9 @@ func (query *Query) GetAll(ctx context.Context, dst interface{}) error {
 	}
 
 	query.dq = query.dq.KeysOnly();
+	defer func() {
+		query = nil;
+	}()
 
 	var cursor *datastore.Cursor;
 	var e error;
@@ -132,10 +154,6 @@ func (query *Query) GetAll(ctx context.Context, dst interface{}) error {
 
 		done = e == datastore.Done;
 	}
-
-	defer func() {
-		query = nil;
-	}()
 
 	return nil;
 }

@@ -597,14 +597,44 @@ func Update(ctx context.Context, m modelable) (err error) {
 }
 
 //Loads values from the datastore for the entity with the given id.
-//Entity types must be the same with m and the entity whos id is id
-func ModelableFromID(ctx context.Context, m modelable, id int64) error {
-	//first try to retrieve item from memcache
+//Entity types must be the same with m and the entity whose id is id
+func FromIntID(ctx context.Context, m modelable, id int64, ancestor modelable) error {
 	model := m.getModel();
 	if !model.Registered {
 		index(m);
 	}
-	model.key = datastore.NewKey(ctx, model.structName, "", id, nil);
+
+	var ancKey *datastore.Key = nil;
+
+	if ancestor != nil {
+		if ancestor.getModel().key == nil {
+			return fmt.Errorf("Ancestor %v has no key", ancestor);
+		}
+		ancKey = ancestor.getModel().key;
+	}
+
+	model.key = datastore.NewKey(ctx, model.structName, "", id, ancKey);
+	return Read(ctx, m);
+}
+
+//Loads values from the datastore for the entity with the given string id.
+//Entity types must be the same with m and the entity whos id is id
+func FromStringID(ctx context.Context, m modelable, id string, ancestor modelable) error {
+	model := m.getModel();
+	if !model.Registered {
+		index(m);
+	}
+
+	var ancKey *datastore.Key = nil;
+
+	if ancestor != nil {
+		if ancestor.getModel().key == nil {
+			return fmt.Errorf("Ancestor %v has no key", ancestor);
+		}
+		ancKey = ancestor.getModel().key;
+	}
+
+	model.key = datastore.NewKey(ctx, model.structName, id, 0, ancKey);
 	return Read(ctx, m);
 }
 

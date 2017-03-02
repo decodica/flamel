@@ -125,7 +125,7 @@ func (query *Query) GetAll(ctx context.Context, dst interface{}) error {
 		cursor, e = query.get(ctx, dst);
 
 		if e != datastore.Done && e != nil {
-			panic(e)
+			return e
 		}
 
 		done = e == datastore.Done;

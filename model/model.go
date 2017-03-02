@@ -77,12 +77,19 @@ func (model *Model) setModel(m Model) {
 
 //returns -1 if the model doesn't have an id
 //returns the id of the model otherwise
-func (model Model) Id() int64 {
+func (model Model) IntID() int64 {
 	if model.key == nil {
 		return -1;
 	}
 
 	return model.key.IntID();
+}
+
+func (model Model) StringID() string {
+	if model.key == nil {
+		return ""
+	}
+	return model.key.StringID()
 }
 
 //Returns the name of the modelable this model refers to
@@ -293,8 +300,7 @@ func isZeroOfType(i interface{}) bool {
 	return i == reflect.Zero(reflect.TypeOf(i)).Interface();
 }
 
-//creates a datastore entity and stores the key into the model field
-func create(ctx context.Context, m modelable) error {
+func createWithOptions(ctx context.Context, m modelable, opts *CreateOptions) error {
 	model := m.getModel();
 
 	//if the root model has a key then this is the wrong operation
@@ -334,14 +340,21 @@ func create(ctx context.Context, m modelable) error {
 		model.references[k] = ref;
 	}
 
-	incompleteKey := datastore.NewIncompleteKey(ctx, model.structName, ancKey);
-	key, err := datastore.Put(ctx, incompleteKey, m);
+	//newKey := datastore.NewIncompleteKey(ctx, model.structName, ancKey);
+	newKey := datastore.NewKey(ctx, model.structName, opts.stringId, opts.intId, ancKey);
+	key, err := datastore.Put(ctx, newKey, m);
 	if err != nil {
 		return err;
 	}
 	model.key = key;
 
 	return nil;
+}
+
+//creates a datastore entity and stores the key into the model field
+func create(ctx context.Context, m modelable) error {
+	opts := NewCreateOptions();
+	return createWithOptions(ctx, m, &opts);
 }
 
 func updateReference(ctx context.Context, ref *reference, key *datastore.Key) (err error) {
@@ -499,8 +512,26 @@ func del(ctx context.Context, m modelable) (err error) {
 	return err;
 }
 
-//Reads data from a modelable and writes it to the datastore as an entity with a new key.
-func Create(ctx context.Context, m modelable) (err error) {
+type CreateOptions struct {
+	stringId string
+	intId int64
+}
+
+func NewCreateOptions() CreateOptions {
+	return CreateOptions{};
+}
+
+func (opts *CreateOptions) WithStringId(id string) {
+	opts.intId = 0;
+	opts.stringId = id;
+}
+
+func (opts *CreateOptions) WithIntId(id int64) {
+	opts.stringId = "";
+	opts.intId = id;
+}
+
+func CreateWithOptions(ctx context.Context, m modelable, copts *CreateOptions) (err error) {
 	model := m.getModel();
 
 	if !model.Registered {
@@ -522,10 +553,15 @@ func Create(ctx context.Context, m modelable) (err error) {
 	opts.XG = true;
 	opts.Attempts = 1;
 	err = datastore.RunInTransaction(ctx, func (ctx context.Context) error {
-		return create(ctx, m);
+		return createWithOptions(ctx, m, copts);
 	}, &opts)
 
 	return err;
+}
+
+//Reads data from a modelable and writes it to the datastore as an entity with a new key.
+func Create(ctx context.Context, m modelable) (err error) {
+	return CreateWithOptions(ctx, m, new(CreateOptions));
 }
 
 //Reads data from a modelable and writes it into the corresponding entity of the datastore.

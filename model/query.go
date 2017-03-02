@@ -111,6 +111,8 @@ func (query *Query) GetAll(ctx context.Context, dst interface{}) error {
 		return errors.New("Invalid query. Query is nil");
 	}
 
+	query.dq = query.dq.KeysOnly();
+
 	var cursor *datastore.Cursor;
 	var e error;
 

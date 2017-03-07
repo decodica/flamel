@@ -61,6 +61,8 @@ func (page *magePage) build(ctx context.Context, req *http.Request) context.Cont
 				reqValues[k] = i;
 			}
 			break;
+		case "PUT":
+		fallthrough
 		case "POST":
 			req.ParseForm();
 			reqType := req.Header.Get("Content-Type");
@@ -80,15 +82,6 @@ func (page *magePage) build(ctx context.Context, req *http.Request) context.Cont
 				i.values = v;
 				reqValues[k] = i;
 			}
-		case "PUT":
-			req.ParseForm();
-			for k , _ := range req.Form {
-				v := req.Form[k];
-				i := requestInput{};
-				i.values = v;
-				reqValues[k] = i;
-			}
-		break;
 		case "DELETE":
 			for k, _ := range req.URL.Query() {
 				s := make([]string, 1, 1);

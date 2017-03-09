@@ -10,7 +10,7 @@ import (
 )
 
 type TemplateRenderer struct {
-	Template template.Template
+	Template *template.Template
 	TemplateName string
 	Data interface{}
 }

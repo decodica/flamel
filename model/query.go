@@ -30,12 +30,12 @@ Filter functions
  */
 func (q *Query) WithModelable(field string, ref modelable) (*Query, error) {
 	refm := ref.getModel();
-	if !refm.Registered {
+	if !refm.registered {
 		return nil, fmt.Errorf("Modelable reference is not registered %+v", ref);
 	}
 
-	if refm.key == nil {
-		return nil, errors.New("Reference key has not been set. Can't retrieve it from datastore");
+	if refm.Key == nil {
+		return nil, errors.New("Reference Key has not been set. Can't retrieve it from datastore");
 	}
 
 	if _, ok := q.mType.FieldByName(field); !ok {
@@ -44,16 +44,16 @@ func (q *Query) WithModelable(field string, ref modelable) (*Query, error) {
 
 	refName := referenceName(q.mType.Name(), field);
 
-	return q.WithField(fmt.Sprintf("%s = ", refName), refm.key), nil;
+	return q.WithField(fmt.Sprintf("%s = ", refName), refm.Key), nil;
 }
 
 func (q *Query) WithAncestor(ancestor modelable) (*Query, error) {
 	am := ancestor.getModel();
-	if am.key == nil {
-		return nil, fmt.Errorf("Invalid ancestor. %s has empty key", ancestor.getModel().Name());
+	if am.Key == nil {
+		return nil, fmt.Errorf("Invalid ancestor. %s has empty Key", ancestor.getModel().Name());
 	}
 
-	q.dq = q.dq.Ancestor(am.key);
+	q.dq = q.dq.Ancestor(am.Key);
 	return q, nil;
 }
 
@@ -173,7 +173,7 @@ func (query *Query) get(ctx context.Context, dst interface{}) (*datastore.Cursor
 
 	for {
 
-		key, err := it.Next(nil);
+		Key, err := it.Next(nil);
 
 		if (err == datastore.Done) {
 			break;
@@ -185,7 +185,7 @@ func (query *Query) get(ctx context.Context, dst interface{}) (*datastore.Cursor
 		}
 
 		more = true;
-		//log.Printf("RUNNING QUERY %v FOR MODEL " + data.entityName + " - FOUND ITEM WITH KEY: " + strconv.Itoa(int(key.IntID())), data.query);
+		//log.Printf("RUNNING QUERY %v FOR MODEL " + data.entityName + " - FOUND ITEM WITH KEY: " + strconv.Itoa(int(Key.IntID())), data.query);
 		newModelable := reflect.New(query.mType);
 		m, ok := newModelable.Interface().(modelable);
 
@@ -201,7 +201,7 @@ func (query *Query) get(ctx context.Context, dst interface{}) (*datastore.Cursor
 		index(m);
 
 		model := m.getModel()
-		model.key = key;
+		model.Key = Key;
 
 		err = Read(ctx, m);
 		if err != nil {
@@ -245,7 +245,7 @@ func isTypeModelable(t reflect.Type) bool {
 }
 
 //retrieves up to datastore limits (currently 1000) entities from either memcache or datastore
-//each datamap must have the key already set
+//each datamap must have the Key already set
 
 /*func (query *Query) GetMulti(ctx context.Context) ([]Model, error) {
 	//check if struct contains the fields
@@ -317,7 +317,7 @@ func isTypeModelable(t reflect.Type) bool {
 
 				for {
 
-					key, err := it.Next(nil);
+					Key, err := it.Next(nil);
 
 					if (err == datastore.Done) {
 						break;
@@ -331,13 +331,13 @@ func isTypeModelable(t reflect.Type) bool {
 					*dm = *mm.dataMap;
 					dm.m = reflect.New(mtype).Interface().(Prototype);
 
-					dm.key = key;
+					dm.Key = Key;
 
-					log.Printf(ctx, "c counter has value #%d. Max is %d, key is %s", c, rq, key.Encode());
+					log.Printf(ctx, "c counter has value #%d. Max is %d, Key is %s", c, rq, Key.Encode());
 					//populates the dst
 					partial[c] = dm;
-					//populate the key
-					keys[c] = key;
+					//populate the Key
+					keys[c] = Key;
 					c++;
 				}
 

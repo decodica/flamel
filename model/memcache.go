@@ -16,10 +16,10 @@ type cacheModel struct {
 	Keys KeyMap
 }
 
-//checks if cache key is valid
-//as per documentation key max length is set at 250 bytes
-func validCacheKey(key string) bool {
-	bs := []byte(key);
+//checks if cache Key is valid
+//as per documentation Key max length is set at 250 bytes
+func validCacheKey(Key string) bool {
+	bs := []byte(Key);
 	valid := len(bs) <= 250;
 	return valid;
 }
@@ -31,19 +31,19 @@ func saveInMemcache(ctx context.Context, m modelable) (err error) {
 	model := m.getModel();
 
 	//a modelable must be registered to be saved in memcache
-	if !model.Registered {
+	if !model.registered {
 		panic("Modelable not registered");
 	}
 
-	if nil == model.key {
-		return fmt.Errorf("No key registered for modelable %s. Can't save in memcache.", model.structName);
+	if nil == model.Key {
+		return fmt.Errorf("No Key registered for modelable %s. Can't save in memcache.", model.structName);
 	}
 
 	i := memcache.Item{};
 	i.Key = model.EncodedKey();
 
 	if !validCacheKey(i.Key) {
-		return fmt.Errorf("cacheModel box key %s is too long", i.Key);
+		return fmt.Errorf("cacheModel box Key %s is too long", i.Key);
 	}
 
 	keyMap := make(KeyMap);
@@ -53,13 +53,13 @@ func saveInMemcache(ctx context.Context, m modelable) (err error) {
 		r := ref.Modelable;
 		rm := r.getModel();
 
-		//throw an error if the model key and the reference key do not coincide
-		if rm.key == nil {
-			return fmt.Errorf("Can't save to memcache. reference model key is nil for reference: %+v", ref);
+		//throw an error if the model Key and the reference Key do not coincide
+		if rm.Key == nil {
+			return fmt.Errorf("Can't save to memcache. reference model Key is nil for reference: %+v", ref);
 		}
 
-		if rm.key != ref.Key {
-			return fmt.Errorf("Can't save to memcache. Key of the model doesn't equal the key of the reference for reference %+v", ref);
+		if rm.Key != ref.Key {
+			return fmt.Errorf("Can't save to memcache. Key of the model doesn't equal the Key of the reference for reference %+v", ref);
 		}
 
 		err = saveInMemcache(ctx, r);
@@ -68,7 +68,7 @@ func saveInMemcache(ctx context.Context, m modelable) (err error) {
 			return err;
 		}
 
-		if rm.key != nil {
+		if rm.Key != nil {
 			keyMap[k] = rm.EncodedKey();
 		}
 	}
@@ -77,7 +77,7 @@ func saveInMemcache(ctx context.Context, m modelable) (err error) {
 	box.Modelable = m;
 	i.Object = box;
 
-	//log.Printf("Saving modelable %+v to memcache at key %s", m, i.Key);
+	//log.Printf("Saving modelable %+v to memcache at Key %s", m, i.Key);
 
 	err = memcache.Gob.Set(ctx, &i);
 
@@ -91,14 +91,14 @@ func saveInMemcache(ctx context.Context, m modelable) (err error) {
 func loadFromMemcache(ctx context.Context, m modelable) (err error) {
 	model := m.getModel();
 
-	if model.key == nil {
-		return fmt.Errorf("No key registered from modelable %s. Can't load from memcache.", model.structName)
+	if model.Key == nil {
+		return fmt.Errorf("No Key registered from modelable %s. Can't load from memcache.", model.structName)
 	}
 
 	cKey := model.EncodedKey();
 
 	if !validCacheKey(cKey) {
-		return fmt.Errorf("cacheModel box key %s is too long", cKey);
+		return fmt.Errorf("cacheModel box Key %s is too long", cKey);
 	}
 
 	box := cacheModel{Keys:make(map[int]string), Modelable:m};
@@ -118,7 +118,7 @@ func loadFromMemcache(ctx context.Context, m modelable) (err error) {
 			ref := model.references[k];
 			r := ref.Modelable;
 			rm := r.getModel();
-			rm.key = decodedKey;
+			rm.Key = decodedKey;
 			err = loadFromMemcache(ctx, ref.Modelable);
 			if err != nil {
 				return err;
@@ -158,8 +158,8 @@ func loadFromMemcache(ctx context.Context, m modelable) (err error) {
 func deleteFromMemcache(ctx context.Context, m modelable) (err error) {
 	model := m.getModel();
 
-	if model.key == nil {
-		return fmt.Errorf("No key registered from modelable %s. Can't delete from memcache.", reflect.TypeOf(m).Elem().Name())
+	if model.Key == nil {
+		return fmt.Errorf("No Key registered from modelable %s. Can't delete from memcache.", reflect.TypeOf(m).Elem().Name())
 	}
 
 	for k, _ := range model.references {
@@ -173,12 +173,12 @@ func deleteFromMemcache(ctx context.Context, m modelable) (err error) {
 
 	cKey := model.EncodedKey();
 	if !validCacheKey(cKey) {
-		return fmt.Errorf("cacheModel box key %s is too long", cKey);
+		return fmt.Errorf("cacheModel box Key %s is too long", cKey);
 	}
 
 	defer func(error) {
 		if err == nil {
-			model.key = nil;
+			model.Key = nil;
 		}
 	}(err)
 
@@ -186,14 +186,14 @@ func deleteFromMemcache(ctx context.Context, m modelable) (err error) {
 }
 
 /*func (data) cacheGet() error {
-	if nil == data.key {
-		return errors.New("Item has no key. Can't retrieve it from memcache");
+	if nil == data.Key {
+		return errors.New("Item has no Key. Can't retrieve it from memcache");
 	}
 
-	skey := data.key.Encode();
+	skey := data.Key.Encode();
 
 	if !validCacheKey(skey) {
-		panic("Exceeding cache key max capacity - call a system administrator");
+		panic("Exceeding cache Key max capacity - call a system administrator");
 	}
 
 	keyMap := make(map[int]string);
@@ -215,7 +215,7 @@ func deleteFromMemcache(ctx context.Context, m modelable) (err error) {
 				panic(e);
 			}
 			ref := data.references[k];
-			ref.key = decodedKey;
+			ref.Key = decodedKey;
 
 			err = ref.read();
 
@@ -244,7 +244,7 @@ type cachePrototype struct {
 }
 
 func (data dataMap) cacheSet() {
-	if nil == data.key {
+	if nil == data.Key {
 		return;
 	}
 
@@ -260,16 +260,16 @@ func (data dataMap) cacheSet() {
 		val := protoValue.Field(k);
 		reflect.ValueOf(ref.Prototype()).Elem().Set(val);
 
-		if ref.key != nil {
-			//encode only not null key references.
-			//if a reference has no key then its value equals the struct default value
-			keyMap[k] = ref.key.Encode();
+		if ref.Key != nil {
+			//encode only not null Key references.
+			//if a reference has no Key then its value equals the struct default value
+			keyMap[k] = ref.Key.Encode();
 		}
 	}
 
 	cacheBox := &cachePrototype{Keys:keyMap};
 	i := &memcache.Item{};
-	i.Key = data.key.Encode();
+	i.Key = data.Key.Encode();
 
 	cacheBox.Proto = data.Prototype();
 
@@ -282,14 +282,14 @@ func (data dataMap) cacheSet() {
 }
 
 func (data *dataMap) cacheGet() error {
-	if nil == data.key {
-		return errors.New("Item has no key. Can't retrieve it from memcache");
+	if nil == data.Key {
+		return errors.New("Item has no Key. Can't retrieve it from memcache");
 	}
 
-	skey := data.key.Encode();
+	skey := data.Key.Encode();
 
 	if !validCacheKey(skey) {
-		panic("Exceeding cache key max capacity - call a system administrator");
+		panic("Exceeding cache Key max capacity - call a system administrator");
 	}
 
 	keyMap := make(map[int]string);
@@ -311,7 +311,7 @@ func (data *dataMap) cacheGet() error {
 				panic(e);
 			}
 			ref := data.references[k];
-			ref.key = decodedKey;
+			ref.Key = decodedKey;
 
 			err = ref.read();
 
@@ -334,7 +334,7 @@ func (data dataMaps) cacheGetMulti(ctx context.Context, keys []*datastore.Key) (
 		strKeys[i] = v.Encode();
 	}
 
-	//get items from memcache by key
+	//get items from memcache by Key
 	items, err := memcache.GetMulti(ctx, strKeys);
 
 	if err != nil {
@@ -344,14 +344,14 @@ func (data dataMaps) cacheGetMulti(ctx context.Context, keys []*datastore.Key) (
 
 	keyMap, _ := data.KeyMap();
 
-	//get the item in the data slice which has the key "key"
+	//get the item in the data slice which has the Key "Key"
 	for k, v := range keyMap {
 		strKey := k.Encode();
 
 		item, ok := items[strKey];
 
 		if !ok {
-			//if there's no key, we remove the element from the keyMap
+			//if there's no Key, we remove the element from the keyMap
 			log.Debugf(ctx, "Key %s not found in map", strKey);
 			delete(keyMap, k);
 			continue;
@@ -379,7 +379,7 @@ func (data dataMaps) cacheGetMulti(ctx context.Context, keys []*datastore.Key) (
 					panic(e);
 				}
 				ref := v.references[k];
-				ref.key = decodedKey;
+				ref.Key = decodedKey;
 			}
 		}
 	}
@@ -412,10 +412,10 @@ func (data dataMaps) cacheSetMulti(ctx context.Context) error {
 			val := protoValue.Field(k);
 			reflect.ValueOf(ref.Prototype()).Elem().Set(val);
 
-			if ref.key != nil {
-				//encode only not null key references.
-				//if a reference has no key then its value equals the struct default value
-				refMap[k] = ref.key.Encode();
+			if ref.Key != nil {
+				//encode only not null Key references.
+				//if a reference has no Key then its value equals the struct default value
+				refMap[k] = ref.Key.Encode();
 			}
 
 		}
@@ -426,7 +426,7 @@ func (data dataMaps) cacheSetMulti(ctx context.Context) error {
 		cacheBox.Proto = pvalue.Prototype();
 
 		i := &memcache.Item{};
-		i.Key = pvalue.key.Encode();
+		i.Key = pvalue.Key.Encode();
 		i.Object = cacheBox;
 
 		items[c] = i;

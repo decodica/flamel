@@ -410,7 +410,7 @@ func toPropertyList(modelable modelable) ([]datastore.Property, error) {
 			//pass reference types to datastore as *datastore.Key type
 			//	name := ref_model_prefix + ref.structName;
 			//p := datastore.Property{Name:name, Value:ref.key};
-			p.Value = ref.key;
+			p.Value = ref.Key;
 			props = append(props, *p);
 			continue
 		}
@@ -485,7 +485,7 @@ func fromPropertyList(modelable modelable, props []datastore.Property) error {
 			if field, ok := sType.FieldByName(pureName(p.Name)); ok {
 				ref := model.references[field.Index[0]];
 				rm := ref.Modelable.getModel();
-				rm.key = key;
+				rm.Key = key;
 				continue
 			}
 			return fmt.Errorf("No reference found at name %s for type %s. PureName is %s", p.Name, sType, pureName(p.Name));

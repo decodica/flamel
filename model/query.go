@@ -11,7 +11,6 @@ import (
 type Query struct {
 	dq *datastore.Query
 	mType reflect.Type
-	mValue reflect.Value
 }
 
 func NewQuery(m modelable) *Query {
@@ -125,7 +124,6 @@ func (query *Query) Get(ctx context.Context, dst interface{}) error {
 }
 
 func (query *Query) GetAll(ctx context.Context, dst interface{}) error {
-
 	if query.dq == nil {
 		return errors.New("Invalid query. Query is nil");
 	}

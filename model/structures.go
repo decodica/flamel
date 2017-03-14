@@ -88,6 +88,9 @@ func mapStructure(t reflect.Type, s *encodedStruct, parentName string) {
 				//pensare a come rappresentare nella mappa uno slice.
 				//todo::if here, nested slice so not supported
 				fType = field.Type.Elem();
+				if fType.Kind() != reflect.Struct {
+					break
+				}
 			fallthrough;
 			case reflect.Struct:
 				//we already mapped the struct, skip further computations
@@ -97,6 +100,7 @@ func mapStructure(t reflect.Type, s *encodedStruct, parentName string) {
 					continue
 				}
 				//else we map the other struct
+				//todo: add to map anyway, so that the second tyme we get a cached value
 				sMap := make(map[string]encodedField);
 				childStruct := &encodedStruct{structName:sName, fieldNames:sMap};
 				sValue.childStruct = childStruct;
@@ -124,11 +128,11 @@ func mapStructure(t reflect.Type, s *encodedStruct, parentName string) {
 			default:
 			break;
 		}
+
 		s.fieldNames[sName] = sValue;
 	}
 	encodedStructs[t] = s;
 }
-
 
 func encodeStruct(s interface{}, props *[]datastore.Property, multiple bool, codec *encodedStruct) error {
 	name := codec.structName;
@@ -145,6 +149,10 @@ func encodeStruct(s interface{}, props *[]datastore.Property, multiple bool, cod
 		v := value.FieldByName(field.Name);
 		p := &datastore.Property{};
 		p.Multiple = multiple;
+
+		if p.Multiple {
+			p.NoIndex = true;
+		}
 
 		p.Name = referenceName(name, field.Name);
 
@@ -208,7 +216,7 @@ type propertyLoader struct {
 }
 
 //parentEncodedField represents a field of interface{} s
-func decodeField(s reflect.Value, p datastore.Property, encodedField encodedField, l *propertyLoader) error {
+func decodeStruct(s reflect.Value, p datastore.Property, encodedField encodedField, l *propertyLoader) error {
 	interf := s;
 	if (s.Kind() == reflect.Ptr) {
 		interf = s.Elem();
@@ -240,12 +248,12 @@ func decodeField(s reflect.Value, p datastore.Property, encodedField encodedFiel
 				//instantiate a new struct of the type of the field v
 				//get the encoded field for the attr of the struct with name == p.Name
 				if attr, ok := encodedField.childStruct.fieldNames[p.Name]; ok {
-					decodeField(field.Addr(), p, attr, l)
+					decodeStruct(field.Addr(), p, attr, l)
 				}
 				//else go down one level
 				cName := childName(p.Name);
 				if attr, ok := encodedField.childStruct.fieldNames[cName]; ok {
-					decodeField(field.Addr(), p, attr, l);
+					decodeStruct(field.Addr(), p, attr, l);
 				}
 				return nil;
 			}
@@ -315,13 +323,13 @@ func decodeField(s reflect.Value, p datastore.Property, encodedField encodedFiel
 				}
 
 				if attr, ok := encodedField.childStruct.fieldNames[p.Name]; ok {
-					decodeField(field.Index(index), p, attr, l)
+					decodeStruct(field.Index(index), p, attr, l)
 				}
 				//else go down one level
 				cName := childName(p.Name);
 				if attr, ok := encodedField.childStruct.fieldNames[cName]; ok {
 
-					decodeField(field.Index(index), p, attr, l);
+					decodeStruct(field.Index(index), p, attr, l);
 				}
 				break;
 			}
@@ -401,7 +409,7 @@ func toPropertyList(modelable modelable) ([]datastore.Property, error) {
 			continue;
 		}
 
-		p := &datastore.Property{};
+		p := datastore.Property{};
 		p.Name = referenceName(sType.Name(), field.Name);
 
 		if rm, ok := model.references[i]; ok {
@@ -411,7 +419,7 @@ func toPropertyList(modelable modelable) ([]datastore.Property, error) {
 			//	name := ref_model_prefix + ref.structName;
 			//p := datastore.Property{Name:name, Value:ref.key};
 			p.Value = ref.Key;
-			props = append(props, *p);
+			props = append(props, p);
 			continue
 		}
 		v := value.Field(i);
@@ -424,6 +432,8 @@ func toPropertyList(modelable modelable) ([]datastore.Property, error) {
 			p.Value = x
 		case datastore.ByteString:
 			p.Value = x
+		case *datastore.Key:
+			p.Value = x;
 		default:
 			switch v.Kind() {
 			case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
@@ -435,17 +445,61 @@ func toPropertyList(modelable modelable) ([]datastore.Property, error) {
 			case reflect.Float32, reflect.Float64:
 				p.Value = v.Float()
 			case reflect.Slice:
-				p.Multiple = true;
-				if v.Type().Elem().Kind() != reflect.Uint8 {
+				sliceKind := v.Type().Elem().Kind();
+				if sliceKind != reflect.Uint8 {
+
 					if val, ok := model.fieldNames[p.Name]; ok {
-						for j := 0; j < v.Len(); j++ {
-							if err := encodeStruct(v.Index(j).Addr().Interface(), &props, true, val.childStruct); err != nil {
-								panic(err);
+						if sliceKind == reflect.Struct {
+							for j := 0; j < v.Len(); j++ {
+								//if the slice is made of structs we encode them
+
+								if err := encodeStruct(v.Index(j).Addr().Interface(), &props, true, val.childStruct); err != nil {
+									panic(err);
+								}
 							}
+							continue;
+						}
+
+						//todo: improve code
+						for j := 0; j < v.Len(); j++ {
+							sp := datastore.Property{};
+							sp.Multiple = true;
+							sp.Name = p.Name;
+							sp.NoIndex = true;
+							//get the element at address j
+							sv := v.Index(j).Addr().Elem();
+							switch svi := sv.Interface().(type) {
+							case time.Time:
+								sp.Value = svi
+							case appengine.BlobKey:
+								sp.Value = svi
+							case appengine.GeoPoint:
+								sp.Value = svi
+							case datastore.ByteString:
+								sp.Value = svi
+							case *datastore.Key:
+								sp.Value = svi;
+							default:
+								switch sv.Kind() {
+								case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+									sp.Value = sv.Int();
+								case reflect.Bool:
+									sp.Value = sv.Bool()
+								case reflect.String:
+									sp.Value = sv.String()
+								case reflect.Float32, reflect.Float64:
+									sp.Value = sv.Float()
+								}
+							}
+
+							props = append(props, sp);
 						}
 						continue;
 					}
 				}
+
+				//if we have a byteslice:
+				p.Multiple = true;
 				p.NoIndex = true
 				p.Value = v.Bytes()
 			case reflect.Struct:
@@ -464,7 +518,7 @@ func toPropertyList(modelable modelable) ([]datastore.Property, error) {
 				return nil, fmt.Errorf("FieldName % s not found in %v for Entity of type %s", p.Name, model.fieldNames, sType);
 			}
 		}
-		props = append(props, *p);
+		props = append(props, p);
 	}
 	return props, nil;
 }
@@ -481,21 +535,28 @@ func fromPropertyList(modelable modelable, props []datastore.Property) error {
 		//if we have a reference we set the key in the corresponding model index
 		//to be processed later within datastore transaction
 
-		if key, ok := p.Value.(*datastore.Key); ok {
-			if field, ok := sType.FieldByName(pureName(p.Name)); ok {
-				ref := model.references[field.Index[0]];
-				rm := ref.Modelable.getModel();
-				rm.Key = key;
-				continue
+		//we consider a reference only if the model says so.
+		//in this way we can mix model. with datastore. package
+		pure := pureName(p.Name);
+		if field, ok := sType.FieldByName(pure); ok {
+			if ref, ok := model.references[field.Index[0]]; ok {
+				//cast to key
+				if key, ok := p.Value.(*datastore.Key); ok {
+					rm := ref.Modelable.getModel();
+					rm.Key = key;
+					continue
+				}
+
+				return fmt.Errorf("No struct of type key found for reference %s.", pure);
 			}
-			return fmt.Errorf("No reference found at name %s for type %s. PureName is %s", p.Name, sType, pureName(p.Name));
 		}
+
 		//load first level values.
 		//log.Printf("Attempt to read prop %s in fieldNames %+v", p.Name, model.fieldNames);
 		if attr, ok := model.fieldNames[p.Name]; ok {
 			//decode the field if its a plain value (no struct, no pointer, no slice, not sure about map)
 			if attr.childStruct == nil {
-				err := decodeField(reflect.ValueOf(modelable), p, attr, &pl);
+				err := decodeStruct(reflect.ValueOf(modelable), p, attr, &pl);
 				if nil != err {
 					return err;
 				}
@@ -507,7 +568,7 @@ func fromPropertyList(modelable modelable, props []datastore.Property) error {
 
 		bname := baseName(p.Name);
 		if attr, ok := model.fieldNames[bname]; ok {
-			err := decodeField(reflect.ValueOf(modelable), p, attr, &pl);
+			err := decodeStruct(reflect.ValueOf(modelable), p, attr, &pl);
 			if nil != err {
 				return err;
 			}

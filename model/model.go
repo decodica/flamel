@@ -639,6 +639,20 @@ func FromStringID(ctx context.Context, m modelable, id string, ancestor modelabl
 	return Read(ctx, m);
 }
 
+func FromEncodedKey(ctx context.Context, m modelable, skey string) error {
+	model := m.getModel();
+
+	key, err := datastore.DecodeKey(skey);
+
+	if err != nil {
+		return err;
+	}
+
+	model.Key = key;
+
+	return Read(ctx, m);
+}
+
 //Reads data from the datastore and writes them into the modelable.
 func Read(ctx context.Context, m modelable) (err error) {
 	model := m.getModel();

@@ -5,7 +5,7 @@ import (
 	"golang.org/x/net/context"
 	"reflect"
 	"fmt"
-	"github.com/pkg/errors"
+	"errors"
 )
 
 type Query struct {

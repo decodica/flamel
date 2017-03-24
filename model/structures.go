@@ -76,7 +76,6 @@ func mapStructure(t reflect.Type, s *encodedStruct, parentName string) {
 
 		sName := referenceName(parentName, field.Name);
 		sValue := encodedField{index:i}
-
 		switch fType.Kind() {
 			case reflect.Map:
 			fallthrough
@@ -94,12 +93,12 @@ func mapStructure(t reflect.Type, s *encodedStruct, parentName string) {
 			fallthrough;
 			case reflect.Struct:
 				//we already mapped the struct, skip further computations
+				//else we map the other struct
 				if _, ok := encodedStructs[fType]; ok {
 					sValue.childStruct = encodedStructs[fType]
 					sValue.childStruct.structName = sName
-					continue
+					break
 				}
-				//else we map the other struct
 				//todo: add to map anyway, so that the second tyme we get a cached value
 				sMap := make(map[string]encodedField);
 				childStruct := &encodedStruct{structName:sName, fieldNames:sMap};
@@ -155,8 +154,6 @@ func encodeStruct(s interface{}, props *[]datastore.Property, multiple bool, cod
 		}
 
 		p.Name = referenceName(name, field.Name);
-
-
 		switch x := v.Interface().(type) {
 			case time.Time:
 				p.Value = x

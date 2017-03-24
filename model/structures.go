@@ -228,118 +228,137 @@ func decodeStruct(s reflect.Value, p datastore.Property, encodedField encodedFie
 
 	switch field.Kind() {
 	//if the field is a struct it can either be a special value (time or geopoint) OR a struct that we have to decode
-		case reflect.Struct:
-			//todo: in encoding the model, treat time and geopoint as direct values
-			switch field.Type() {
-			case typeOfTime:
-				x, ok := p.Value.(time.Time)
-				if !ok && p.Value != nil {
-					return errors.New("Error - Invalid Time type");
-				}
-				field.Set(reflect.ValueOf(x))
-			case typeOfGeoPoint:
-				x, ok := p.Value.(appengine.GeoPoint)
-				if !ok && p.Value != nil {
-					return errors.New("Error - invalid geoPoint type");
-				}
-				field.Set(reflect.ValueOf(x))
-			default:
+	case reflect.Struct:
+		//todo: in encoding the model, treat time and geopoint as direct values
+		switch field.Type() {
+		case typeOfTime:
+			x, ok := p.Value.(time.Time)
+			if !ok && p.Value != nil {
+				return errors.New("Error - Invalid Time type");
+			}
+			field.Set(reflect.ValueOf(x))
+		case typeOfGeoPoint:
+			x, ok := p.Value.(appengine.GeoPoint)
+			if !ok && p.Value != nil {
+				return errors.New("Error - invalid geoPoint type");
+			}
+			field.Set(reflect.ValueOf(x))
+		default:
 
-				//instantiate a new struct of the type of the field v
-				//get the encoded field for the attr of the struct with name == p.Name
-				if attr, ok := encodedField.childStruct.fieldNames[p.Name]; ok {
-					decodeStruct(field.Addr(), p, attr, l)
-				}
-				//else go down one level
-				cName := childName(p.Name);
-				if attr, ok := encodedField.childStruct.fieldNames[cName]; ok {
-					decodeStruct(field.Addr(), p, attr, l);
-				}
-				return nil;
+			//instantiate a new struct of the type of the field v
+			//get the encoded field for the attr of the struct with name == p.Name
+			if attr, ok := encodedField.childStruct.fieldNames[p.Name]; ok {
+				decodeStruct(field.Addr(), p, attr, l)
 			}
-		case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
-			x, ok := p.Value.(int64)
-			if !ok && p.Value != nil {
-				return errors.New("Error 1");
+			//else go down one level
+			cName := childName(p.Name);
+			if attr, ok := encodedField.childStruct.fieldNames[cName]; ok {
+				decodeStruct(field.Addr(), p, attr, l);
 			}
-			if field.OverflowInt(x) {
-				return fmt.Errorf("value %v overflows struct field of type %v", x, field.Type());
+			return nil;
+		}
+	case reflect.Slice:
+		sliceKind := field.Type().Elem().Kind();
+
+		x, ok := p.Value.([]byte)
+		if !ok {
+			if y, yok := p.Value.(datastore.ByteString); yok {
+				x, ok = []byte(y), true
 			}
-			field.SetInt(x)
-		case reflect.Bool:
-			x, ok := p.Value.(bool)
-			if !ok && p.Value != nil {
-				return errors.New("Error 2");
+		}
+		if !ok && p.Value != nil {
+			//if it's a struct slice
+			if !p.Multiple {
+				return errors.New("Error - invalid slice. Can only support byte slices (Bytestrings)");
 			}
-			field.SetBool(x)
-		case reflect.String:
-			switch x := p.Value.(type) {
-			case appengine.BlobKey:
-				field.SetString(string(x));
-			case datastore.ByteString:
-				field.SetString(string(x));
-			case string:
-				field.SetString(x);
-			default:
-				if p.Value != nil {
-					return errors.New("Error 3");
-				}
+		}
+
+		if sliceKind != reflect.Uint8 {
+			if l.mem == nil {
+				l.mem = make(map[string]int)
 			}
-		case reflect.Float32, reflect.Float64:
-			x, ok := p.Value.(float64)
-			if !ok && p.Value != nil {
-				return errors.New("Error 4");
-			}
-			if field.OverflowFloat(x) {
-				return fmt.Errorf("value %v overflows struct field of type %v", x, field.Type());
-			}
-			field.SetFloat(x)
-		case reflect.Ptr:
-			//throw an exception here since keys are not supported directly by the model framework
-			return fmt.Errorf("Pointer type not supported. Found Pointer for field %v", field.Type());
-		case reflect.Slice:
-			x, ok := p.Value.([]byte)
-			if !ok {
-				if y, yok := p.Value.(datastore.ByteString); yok {
-					x, ok = []byte(y), true
-				}
-			}
-			if !ok && p.Value != nil {
-				//if it's a struct slice
-				if !p.Multiple {
-					return errors.New("Error - invalid slice. Can only support byte slices (Bytestrings)");
-				}
+			index := l.mem[p.Name];
+			l.mem[p.Name] = index + 1;
+			for field.Len() <= index {
+				sliceElem := reflect.New(field.Type().Elem()).Elem();
+				field.Set(reflect.Append(field, sliceElem));
 			}
 
-			if field.Type().Elem().Kind() != reflect.Uint8 {
-				if l.mem == nil {
-					l.mem = make(map[string]int)
-				}
-				index := l.mem[p.Name];
-				l.mem[p.Name] = index + 1;
-				for field.Len() <= index {
-					sliceElem := reflect.New(field.Type().Elem()).Elem();
-					field.Set(reflect.Append(field, sliceElem));
-				}
-
+			if sliceKind == reflect.Struct {
 				if attr, ok := encodedField.childStruct.fieldNames[p.Name]; ok {
 					decodeStruct(field.Index(index), p, attr, l)
 				}
 				//else go down one level
 				cName := childName(p.Name);
 				if attr, ok := encodedField.childStruct.fieldNames[cName]; ok {
-
 					decodeStruct(field.Index(index), p, attr, l);
 				}
-				break;
+			} else {
+				err := decodeField(field.Index(index), p);
+				if err != nil {
+					return err;
+				}
 			}
 
-			field.SetBytes(x)
-		default:
-			return fmt.Errorf("unsupported load type %s", field.Kind().String());
+			break;
+		}
+
+		field.SetBytes(x)
+	default:
+
+		decodeField(field, p)
 	}
 
 	return nil;
+}
+
+func decodeField(field reflect.Value, p datastore.Property) error {
+
+	switch field.Kind() {
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		x, ok := p.Value.(int64)
+		if !ok && p.Value != nil {
+			return errors.New("Error 1");
+		}
+		if field.OverflowInt(x) {
+			return fmt.Errorf("value %v overflows struct field of type %v", x, field.Type());
+		}
+		field.SetInt(x)
+	case reflect.Bool:
+		x, ok := p.Value.(bool)
+		if !ok && p.Value != nil {
+			return errors.New("Error 2");
+		}
+		field.SetBool(x)
+	case reflect.String:
+		switch x := p.Value.(type) {
+		case appengine.BlobKey:
+			field.SetString(string(x));
+		case datastore.ByteString:
+			field.SetString(string(x));
+		case string:
+			field.SetString(x);
+		default:
+			if p.Value != nil {
+				return errors.New("Error 3");
+			}
+		}
+	case reflect.Float32, reflect.Float64:
+		x, ok := p.Value.(float64)
+		if !ok && p.Value != nil {
+			return errors.New("Error 4");
+		}
+		if field.OverflowFloat(x) {
+			return fmt.Errorf("value %v overflows struct field of type %v", x, field.Type());
+		}
+		field.SetFloat(x)
+	case reflect.Ptr:
+		//throw an exception here since keys are not supported directly by the model framework
+		return fmt.Errorf("Pointer type not supported. Found Pointer for field %v", field.Type());
+	default:
+		return fmt.Errorf("unsupported load type %s", field.Kind().String());
+	}
+	return nil
 }
 
 //returns the name of a reference

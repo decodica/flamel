@@ -225,7 +225,6 @@ func decodeStruct(s reflect.Value, p datastore.Property, encodedField encodedFie
 
 	//get the field we are decoding
 	field := interf.Field(encodedField.index);
-
 	switch field.Kind() {
 	//if the field is a struct it can either be a special value (time or geopoint) OR a struct that we have to decode
 	case reflect.Struct:
@@ -353,8 +352,14 @@ func decodeField(field reflect.Value, p datastore.Property) error {
 		}
 		field.SetFloat(x)
 	case reflect.Ptr:
-		//throw an exception here since keys are not supported directly by the model framework
-		return fmt.Errorf("Pointer type not supported. Found Pointer for field %v", field.Type());
+		x, ok := p.Value.(*datastore.Key)
+		if !ok && p.Value != nil {
+			return fmt.Errorf("unsupported load type %s", field.Type().String());
+		}
+		if _, ok := field.Interface().(*datastore.Key); !ok {
+			return fmt.Errorf("unsupported pointer interface %s", field.Interface());
+		}
+		field.Set(reflect.ValueOf(x))
 	default:
 		return fmt.Errorf("unsupported load type %s", field.Kind().String());
 	}
@@ -571,20 +576,15 @@ func fromPropertyList(modelable modelable, props []datastore.Property) error {
 		}
 
 		//load first level values.
-		//log.Printf("Attempt to read prop %s in fieldNames %+v", p.Name, model.fieldNames);
 		if attr, ok := model.fieldNames[p.Name]; ok {
-			//decode the field if its a plain value (no struct, no pointer, no slice, not sure about map)
-			if attr.childStruct == nil {
-				err := decodeStruct(reflect.ValueOf(modelable), p, attr, &pl);
-				if nil != err {
-					return err;
-				}
-				continue;
+			err := decodeStruct(reflect.ValueOf(modelable), p, attr, &pl);
+			if nil != err {
+				return err;
 			}
+			continue;
 		}
 		//if is not in the first level get the first level name
 		//firstLevelName := strings.Split(p.Name, ".")[0];
-
 		bname := baseName(p.Name);
 		if attr, ok := model.fieldNames[bname]; ok {
 			err := decodeStruct(reflect.ValueOf(modelable), p, attr, &pl);

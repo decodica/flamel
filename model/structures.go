@@ -3,12 +3,12 @@ package model
 
 import (
 	"reflect"
-	"time"
 	"fmt"
 	"strings"
 	"google.golang.org/appengine/datastore"
 	"google.golang.org/appengine"
 	"errors"
+	"time"
 )
 
 
@@ -103,7 +103,12 @@ func mapStructure(t reflect.Type, s *encodedStruct, parentName string) {
 				sMap := make(map[string]encodedField);
 				childStruct := &encodedStruct{structName:sName, fieldNames:sMap};
 				sValue.childStruct = childStruct;
-				mapStructure(fType, childStruct, field.Name);
+				if reflect.PtrTo(fType).Implements(typeOfModelable) {
+					sName = fType.Name();
+					mapStructure(fType, childStruct, sName);
+				} else {
+					mapStructure(fType, childStruct, field.Name);
+				}
 			break;
 			case reflect.Ptr:
 				//if we have a pointer we store the value it points to
@@ -431,6 +436,12 @@ func toPropertyList(modelable modelable) ([]datastore.Property, error) {
 		}
 
 		p := datastore.Property{};
+
+
+		if field.Tag.Get("model") == tag_noindex {
+			p.NoIndex = true;
+		}
+
 		p.Name = referenceName(sType.Name(), field.Name);
 
 		if rm, ok := model.references[i]; ok {

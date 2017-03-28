@@ -143,9 +143,8 @@ func (reference *reference) isStale() bool {
 //It is important to benchmark and optimize this code in order to not degrade performances
 //of reads and writes calls to the Datastore.
 
-//todo: benchmark and profile
+//Indexing of cached item takes roughly 20k nanoseconds (0.020ms)
 func index(m modelable) {
-
 	mType := reflect.TypeOf(m).Elem();
 	obj := reflect.ValueOf(m).Elem();
 	//retrieve modelable anagraphics

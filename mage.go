@@ -183,9 +183,12 @@ func (mage *mage) Run(w http.ResponseWriter, req *http.Request) {
 		w.Header().Set(k, v)
 	}
 
-	if redirect.Status != http.StatusOK {
+	if redirect.Status >= 300 && redirect.Status < 400 {
 		http.Redirect(w, req, redirect.Location, redirect.Status)
-		return
+	}
+
+	if redirect.Status >= 400 {
+		http.Error(w, redirect.Location, redirect.Status);
 	}
 
 	magePage.out.Renderer.Render(w);

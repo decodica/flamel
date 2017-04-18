@@ -13,6 +13,13 @@ type Query struct {
 	mType reflect.Type
 }
 
+type Order uint8;
+
+const (
+	ASC Order = iota + 1
+	DESC
+)
+
 func NewQuery(m modelable) *Query {
 	typ := reflect.TypeOf(m).Elem();
 
@@ -62,8 +69,12 @@ func (q *Query) WithField(field string, value interface{}) *Query {
 	return q;
 }
 
-func (q *Query) OrderBy(fieldName string) *Query {
-	q.dq = q.dq.Order(fieldName);
+func (q *Query) OrderBy(field string, order Order) *Query {
+	prepared := entityPropName(q.mType.Name(), field);
+	if order == DESC {
+		prepared = fmt.Sprintf("-%s", prepared);
+	}
+	q.dq = q.dq.Order(prepared);
 	return q;
 }
 

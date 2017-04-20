@@ -10,6 +10,7 @@ import (
 	"google.golang.org/appengine/file"
 	"google.golang.org/appengine/image"
 	"google.golang.org/appengine/memcache"
+	"distudio.com/mage/cors"
 )
 
 type mage struct {
@@ -47,6 +48,8 @@ type MageConfig struct {
 	TokenExpirationKey     string
 	TokenExpiration        time.Duration
 	RequestUrlKey          string
+	//true if the server suport Cross Origin Request
+	CORS *cors.Cors
 }
 
 const (
@@ -151,6 +154,16 @@ func (mage *mage) Run(w http.ResponseWriter, req *http.Request) {
 	ctx := appengine.NewContext(req)
 
 	ctx = mage.app.OnCreate(ctx);
+
+	//handle CORS requests
+	if mage.Config.CORS != nil && req.Method == http.MethodOptions {
+		w = mage.Config.CORS.HandleOptions(w);
+		w.Header().Set("Content-Type", "text/html; charset=utf8");
+		renderer := TextRenderer{};
+		renderer.Render(w);
+		return;
+	}
+
 	err, page := mage.app.CreatePage(ctx, req.URL.Path);
 
 	if nil != err {
@@ -176,6 +189,10 @@ func (mage *mage) Run(w http.ResponseWriter, req *http.Request) {
 	//add headers and cookies
 	for _, v := range magePage.out.cookies {
 		http.SetCookie(w, v)
+	}
+
+	if mage.Config.CORS != nil {
+		w = mage.Config.CORS.HandleOptions(w);
 	}
 
 	//add the redirect header if needed

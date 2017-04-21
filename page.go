@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"io/ioutil"
 	"golang.org/x/net/context"
+	"strings"
 )
 
 type RequestInputs map[string]requestInput;
@@ -66,7 +67,7 @@ func (page *magePage) build(ctx context.Context, req *http.Request) context.Cont
 		case "POST":
 			req.ParseForm();
 			reqType := req.Header.Get("Content-Type");
-			if reqType == "application/json" {
+			if  strings.Contains(reqType, "application/json") {
 				s := make([]string, 1, 1);
 				i := requestInput{};
 				str, _ := ioutil.ReadAll(req.Body);

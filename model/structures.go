@@ -232,6 +232,8 @@ func decodeStruct(s reflect.Value, p datastore.Property, encodedField encodedFie
 	case reflect.Struct:
 		//todo: in encoding the model, treat time and geopoint as direct values
 		switch field.Type() {
+		//ignore the model struct itself
+		case typeOfModel:
 		case typeOfTime:
 			x, ok := p.Value.(time.Time)
 			if !ok && p.Value != nil {
@@ -558,6 +560,7 @@ func toPropertyList(modelable modelable) ([]datastore.Property, error) {
 
 func fromPropertyList(modelable modelable, props []datastore.Property) error {
 	//get the underlying prototype
+
 	value := reflect.ValueOf(modelable).Elem();
 	sType := value.Type();
 	model := modelable.getModel();

@@ -11,6 +11,7 @@ import (
 type Query struct {
 	dq *datastore.Query
 	mType reflect.Type
+	projection bool
 }
 
 type Order uint8;
@@ -27,6 +28,7 @@ func NewQuery(m modelable) *Query {
 	query := Query{
 		dq: q,
 		mType: typ,
+		projection: false,
 	}
 	return &query;
 }
@@ -92,6 +94,20 @@ func (q *Query) Count(ctx context.Context) (int, error) {
 	return q.dq.Count(ctx);
 }
 
+func (q *Query) Distinct(fields ...string) * Query {
+	pf := make([]string, 0, 0);
+
+	for _ , v := range fields {
+		prepared := entityPropName(q.mType.Name(), v);
+		pf = append(pf, prepared);
+	}
+
+	q.dq = q.dq.Project(pf...);
+	q.dq = q.dq.Distinct();
+	q.projection = true;
+	return q;
+}
+
 //Shorthand method to retrieve only the first entity satisfying the query
 //It is equivalent to a Get With limit 1
 func (q *Query) First(ctx context.Context, m modelable) (err error) {
@@ -120,12 +136,16 @@ func (query *Query) Get(ctx context.Context, dst interface{}) error {
 		return errors.New("Invalid query. Query is nil");
 	}
 
-	query.dq = query.dq.KeysOnly();
 	defer func() {
 		query = nil;
 	}()
 
+	if !query.projection {
+		query.dq = query.dq.KeysOnly();
+	}
+
 	_, err := query.get(ctx, dst);
+
 
 	if err != nil && err != datastore.Done {
 		return err;
@@ -139,10 +159,14 @@ func (query *Query) GetAll(ctx context.Context, dst interface{}) error {
 		return errors.New("Invalid query. Query is nil");
 	}
 
-	query.dq = query.dq.KeysOnly();
 	defer func() {
 		query = nil;
 	}()
+
+	if !query.projection {
+		query.dq = query.dq.KeysOnly();
+	}
+
 
 	var cursor *datastore.Cursor;
 	var e error;

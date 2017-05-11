@@ -8,7 +8,7 @@ import (
 type Cors struct {
 	headers string;
 	methods string;
-	origins string;
+	origins []string;
 	//seconds to cache the response
 	MaxAgeSeconds int;
 }
@@ -18,14 +18,18 @@ func NewCors(origins []string, methods []string, headers []string) *Cors {
 	c := Cors{};
 	c.headers = convertToHeaderString(headers);
 	c.methods = convertToHeaderString(methods);
-	c.origins = convertToHeaderString(origins);
+	c.origins = origins;
 
 	return &c;
 }
 
-func (c *Cors) HandleOptions(w http.ResponseWriter) http.ResponseWriter {
-	if c.origins != "" {
-		w.Header().Set("Access-Control-Allow-Origin", c.origins);
+func (c *Cors) HandleOptions(w http.ResponseWriter, origin string) http.ResponseWriter {
+
+	for _, v := range c.origins {
+		if (v == origin) {
+			w.Header().Set("Access-Control-Allow-Origin", origin);
+			break;
+		}
 	}
 
 	if c.methods != "" {

@@ -155,9 +155,10 @@ func (mage *mage) Run(w http.ResponseWriter, req *http.Request) {
 
 	ctx = mage.app.OnCreate(ctx);
 
+	origin, hasOrigin := req.Header["Origin"];
 	//handle CORS requests
-	if mage.Config.CORS != nil && req.Method == http.MethodOptions {
-		w = mage.Config.CORS.HandleOptions(w);
+	if hasOrigin && mage.Config.CORS != nil && req.Method == http.MethodOptions {
+		w = mage.Config.CORS.HandleOptions(w, origin[0]);
 		w.Header().Set("Content-Type", "text/html; charset=utf8");
 		renderer := TextRenderer{};
 		renderer.Render(w);
@@ -191,8 +192,8 @@ func (mage *mage) Run(w http.ResponseWriter, req *http.Request) {
 		http.SetCookie(w, v)
 	}
 
-	if mage.Config.CORS != nil {
-		w = mage.Config.CORS.HandleOptions(w);
+	if hasOrigin && mage.Config.CORS != nil {
+		w = mage.Config.CORS.HandleOptions(w, origin[0]);
 	}
 
 	//add the redirect header if needed

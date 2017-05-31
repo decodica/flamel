@@ -58,7 +58,7 @@ func (q *Query) WithModelable(field string, ref modelable) (*Query, error) {
 func (q *Query) WithAncestor(ancestor modelable) (*Query, error) {
 	am := ancestor.getModel();
 	if am.Key == nil {
-		return nil, fmt.Errorf("Invalid ancestor. %s has empty Key", ancestor.getModel().Name());
+		return nil, fmt.Errorf("Invalid ancestor. %s has empty Key", am.Name());
 	}
 
 	q.dq = q.dq.Ancestor(am.Key);

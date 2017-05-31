@@ -11,6 +11,10 @@ import (
 	"google.golang.org/appengine/image"
 	"google.golang.org/appengine/memcache"
 	"distudio.com/mage/cors"
+	"strings"
+	"io/ioutil"
+	"google.golang.org/appengine/log"
+	"fmt"
 )
 
 type mage struct {
@@ -48,8 +52,20 @@ type MageConfig struct {
 	TokenExpirationKey     string
 	TokenExpiration        time.Duration
 	RequestUrlKey          string
+	MaxFileUploadSize      int64
 	//true if the server suport Cross Origin Request
 	CORS *cors.Cors
+}
+
+func DefaultConfig() MageConfig {
+	config := MageConfig{}
+	//set default keys
+	config.TokenAuthenticationKey = token_auth_key
+	config.TokenExpirationKey = token_expiry_key
+	config.TokenExpiration = 60 * time.Minute
+	config.MaxFileUploadSize = DEFAULT_MAX_FILE_SIZE;
+
+	return config;
 }
 
 const (
@@ -63,6 +79,12 @@ const (
 	REQUEST_METHOD = "method";
 	REQUEST_IPV4 = "remote-address";
 	REQUEST_JSON_DATA = "__json__"
+
+	//default at 4 megs
+	DEFAULT_MAX_FILE_SIZE = (1 << 20) * 4;
+
+	_error_parse_request string = "Error parsing request data: %v";
+	_error_create_page string = "Error creating page: %v";
 )
 
 //mage is a singleton
@@ -135,11 +157,7 @@ func MageInstance() *mage {
 		return mageInstance
 	}
 
-	config := MageConfig{}
-	//set default keys
-	config.TokenAuthenticationKey = token_auth_key
-	config.TokenExpirationKey = token_expiry_key
-	config.TokenExpiration = 60 * time.Minute
+	config := DefaultConfig();
 
 	mageInstance = &mage{Config: config}
 	return mageInstance
@@ -156,9 +174,10 @@ func (mage *mage) Run(w http.ResponseWriter, req *http.Request) {
 	ctx = mage.app.OnCreate(ctx);
 
 	origin, hasOrigin := req.Header["Origin"];
+
 	//handle CORS requests
 	if hasOrigin && mage.Config.CORS != nil && req.Method == http.MethodOptions {
-		w = mage.Config.CORS.HandleOptions(w, origin[0]);
+		mage.Config.CORS.HandleOptions(w, origin[0]);
 		w.Header().Set("Content-Type", "text/html; charset=utf8");
 		renderer := TextRenderer{};
 		renderer.Render(w);
@@ -167,16 +186,26 @@ func (mage *mage) Run(w http.ResponseWriter, req *http.Request) {
 
 	err, page := mage.app.CreatePage(ctx, req.URL.Path);
 
-	if nil != err {
-		panic(err);
+	if err != nil {
+		renderer := TextRenderer{};
+		renderer.Data = fmt.Sprintf(_error_create_page, err);
+		w.WriteHeader(http.StatusInternalServerError);
+		renderer.Render(w);
+		return;
 	}
 
 	magePage := newGaemsPage(page);
 	defer mage.destroy(ctx, magePage);
 
 	//add inputs to the context object
-	ctx = magePage.build(ctx, req);
-
+	ctx, err = mage.parseRequestInputs(ctx, req);
+	if err != nil {
+		renderer := TextRenderer{};
+		renderer.Data = fmt.Sprintf(_error_parse_request, err);
+		w.WriteHeader(http.StatusInternalServerError);
+		renderer.Render(w);
+		return;
+	}
 
 	authenticator := mage.app.AuthenticatorForPath(req.URL.Path);
 
@@ -185,16 +214,52 @@ func (mage *mage) Run(w http.ResponseWriter, req *http.Request) {
 		ctx = authenticator.Authenticate(ctx, user);
 	}
 
-	redirect := magePage.process(ctx, req);
-
 	//add headers and cookies
 	for _, v := range magePage.out.cookies {
 		http.SetCookie(w, v)
 	}
 
-	if hasOrigin && mage.Config.CORS != nil {
-		w = mage.Config.CORS.HandleOptions(w, origin[0]);
+	//handle the CORS framework
+	if mage.Config.CORS != nil {
+
+		//handle the AMP case
+		if mage.Config.CORS.AMPForUrl(req.URL.Path) {
+			log.Debugf(ctx, "URL MUST BE VALIDATED")
+			AMPsource, hasSource := req.URL.Query()[cors.AMP_SOURCE_ORIGIN_KEY];
+
+			//if the source is not set the AMP request is invalid
+			if !hasSource || len(AMPsource) == 0 {
+				log.Debugf(ctx, "MISSING SOURCE ORIGIN KEY")
+				w.WriteHeader(http.StatusNotAcceptable);
+				return;
+			}
+
+			//if the source is set we check if the AMP-Same-Origin is set
+			hasSameOrigin := req.Header.Get(cors.AMP_SAME_ORIGIN_HEADER_KEY) == "true";
+
+			if !(hasOrigin || hasSameOrigin) {
+				w.WriteHeader(http.StatusNotAcceptable);
+				return;
+			}
+
+			//if the value of AMP_SAME_ORIGIN is different from true we validate the origin
+			//amongst those accepted
+			if mage.Config.CORS.ValidateAMP(w, AMPsource[0]) != nil {
+				w.WriteHeader(http.StatusNotAcceptable);
+				return;
+			}
+		}
+
+		if hasOrigin {
+			allowed := mage.Config.CORS.HandleOptions(w, origin[0]);
+			if !allowed {
+				w.WriteHeader(http.StatusForbidden);
+				return;
+			}
+		}
 	}
+
+	redirect := magePage.process(ctx);
 
 	//add the redirect header if needed
 	for k, v := range magePage.out.headers {
@@ -209,10 +274,108 @@ func (mage *mage) Run(w http.ResponseWriter, req *http.Request) {
 		w.WriteHeader(redirect.Status);
 	}
 
-	magePage.out.Renderer.Render(w);
+	defer magePage.out.Renderer.Render(w);
 }
 
 func (mage *mage) destroy(ctx context.Context, page *magePage) {
 	page.page.OnDestroy(ctx);
 	mage.app.OnDestroy(ctx);
+}
+
+func (mage mage) parseRequestInputs(ctx context.Context, req *http.Request) (context.Context, error) {
+	reqValues := make(RequestInputs);
+
+	//todo: put in context
+	method := requestInput{};
+	m := make([]string, 1, 1);
+	m[0] = req.Method;
+	method.values = m;
+	reqValues[REQUEST_METHOD] = method;
+
+
+	ipV := requestInput{};
+	ip := make([]string, 0);
+	ip = append(ip, req.RemoteAddr);
+	ipV.values = ip;
+	reqValues[REQUEST_IPV4] = ipV;
+
+	//get request params
+	switch req.Method {
+	case http.MethodGet:
+		for k, _ := range req.URL.Query() {
+			s := make([]string, 1, 1);
+			v := req.URL.Query().Get(k);
+			s[0] = v;
+			i := requestInput{};
+			i.values = s;
+			reqValues[k] = i;
+		}
+		break;
+	case http.MethodPut:
+		fallthrough
+	case http.MethodPost:
+		reqType := req.Header.Get("Content-Type");
+		//parse the multiform data if the request specifies it as its content type
+		if strings.Contains(reqType, "multipart/form-data") {
+			err := req.ParseMultipartForm(mage.Config.MaxFileUploadSize);
+			if err != nil {
+				return ctx, err;
+			}
+		} else {
+			err := req.ParseForm();
+			if err != nil {
+				return ctx, err;
+			}
+		}
+
+		if  strings.Contains(reqType, "application/json") {
+			s := make([]string, 1, 1);
+			i := requestInput{};
+			str, _ := ioutil.ReadAll(req.Body);
+			s[0] = string(str);
+			i.values = s;
+			reqValues[REQUEST_JSON_DATA] = i;
+			break;
+		}
+
+		for k , _ := range req.Form {
+			v := req.Form[k];
+			log.Debugf(ctx, "POST - key: %s, value: %s", k, v);
+			i := requestInput{};
+			i.values = v;
+			reqValues[k] = i;
+		}
+	case http.MethodDelete:
+		for k, _ := range req.URL.Query() {
+			s := make([]string, 1, 1);
+			v := req.URL.Query().Get(k);
+			s[0] = v;
+			i := requestInput{};
+			i.values = s;
+			reqValues[k] = i;
+		}
+		break;
+	default:
+	}
+
+	//get the headers
+	for k, _ := range req.Header {
+		i := requestInput{};
+		s := make([]string, 1, 1);
+		s[0] = req.Header.Get(k);
+		i.values = s;
+		reqValues[k] = i;
+	}
+
+	//get cookies
+	for _, c := range req.Cookies() {
+		//threat the auth token apart
+		i := requestInput{};
+		s := make([]string, 1, 1);
+		s[0] = c.Value;
+		i.values = s;
+		reqValues[c.Name] = i;
+	}
+
+	return context.WithValue(ctx, REQUEST_INPUTS, reqValues), nil;
 }

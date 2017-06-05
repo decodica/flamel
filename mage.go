@@ -13,7 +13,7 @@ import (
 	"distudio.com/mage/cors"
 	"strings"
 	"io/ioutil"
-	"google.golang.org/appengine/log"
+
 	"fmt"
 )
 
@@ -55,6 +55,9 @@ type MageConfig struct {
 	MaxFileUploadSize      int64
 	//true if the server suport Cross Origin Request
 	CORS *cors.Cors
+
+	//used to enforce redirect to base host url
+	EnforceHostnameRedirect string
 }
 
 func DefaultConfig() MageConfig {
@@ -173,6 +176,17 @@ func (mage *mage) Run(w http.ResponseWriter, req *http.Request) {
 
 	ctx = mage.app.OnCreate(ctx);
 
+	//if we enforce the hostname and the request hostname doesn't match, we redirect to the requested host
+	//host is in the form domainname.com
+	if mage.Config.EnforceHostnameRedirect!= "" && mage.Config.EnforceHostnameRedirect != req.Host {
+		hst := fmt.Sprintf("%s%s", mage.Config.EnforceHostnameRedirect, req.URL.Path);
+		if req.URL.RawQuery != "" {
+			hst = fmt.Sprintf("%s?%s", hst, req.URL.RawQuery);
+		}
+		http.Redirect(w, req, hst, http.StatusMovedPermanently);
+		return;
+	}
+
 	origin, hasOrigin := req.Header["Origin"];
 
 	//handle CORS requests
@@ -224,12 +238,10 @@ func (mage *mage) Run(w http.ResponseWriter, req *http.Request) {
 
 		//handle the AMP case
 		if mage.Config.CORS.AMPForUrl(req.URL.Path) {
-			log.Debugf(ctx, "URL MUST BE VALIDATED")
 			AMPsource, hasSource := req.URL.Query()[cors.AMP_SOURCE_ORIGIN_KEY];
 
 			//if the source is not set the AMP request is invalid
 			if !hasSource || len(AMPsource) == 0 {
-				log.Debugf(ctx, "MISSING SOURCE ORIGIN KEY")
 				w.WriteHeader(http.StatusNotAcceptable);
 				return;
 			}
@@ -340,7 +352,6 @@ func (mage mage) parseRequestInputs(ctx context.Context, req *http.Request) (con
 
 		for k , _ := range req.Form {
 			v := req.Form[k];
-			log.Debugf(ctx, "POST - key: %s, value: %s", k, v);
 			i := requestInput{};
 			i.values = v;
 			reqValues[k] = i;

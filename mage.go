@@ -15,6 +15,7 @@ import (
 	"io/ioutil"
 
 	"fmt"
+	"google.golang.org/appengine/log"
 )
 
 type mage struct {
@@ -55,9 +56,6 @@ type MageConfig struct {
 	MaxFileUploadSize      int64
 	//true if the server suport Cross Origin Request
 	CORS *cors.Cors
-
-	//used to enforce redirect to base host url
-	EnforceHostnameRedirect string
 }
 
 func DefaultConfig() MageConfig {
@@ -176,22 +174,13 @@ func (mage *mage) Run(w http.ResponseWriter, req *http.Request) {
 
 	ctx = mage.app.OnCreate(ctx);
 
-	//if we enforce the hostname and the request hostname doesn't match, we redirect to the requested host
-	//host is in the form domainname.com
-	if mage.Config.EnforceHostnameRedirect!= "" && mage.Config.EnforceHostnameRedirect != req.Host {
-		hst := fmt.Sprintf("%s%s", mage.Config.EnforceHostnameRedirect, req.URL.Path);
-		if req.URL.RawQuery != "" {
-			hst = fmt.Sprintf("%s?%s", hst, req.URL.RawQuery);
-		}
-		http.Redirect(w, req, hst, http.StatusMovedPermanently);
-		return;
-	}
+	origin := req.Header.Get("Origin");
 
-	origin, hasOrigin := req.Header["Origin"];
+	hasOrigin := origin != "";
 
 	//handle CORS requests
 	if hasOrigin && mage.Config.CORS != nil && req.Method == http.MethodOptions {
-		mage.Config.CORS.HandleOptions(w, origin[0]);
+		mage.Config.CORS.HandleOptions(w, origin);
 		w.Header().Set("Content-Type", "text/html; charset=utf8");
 		renderer := TextRenderer{};
 		renderer.Render(w);
@@ -262,8 +251,9 @@ func (mage *mage) Run(w http.ResponseWriter, req *http.Request) {
 			}
 		}
 
+		log.Debugf(ctx, "Request has origin: %v", hasOrigin)
 		if hasOrigin {
-			allowed := mage.Config.CORS.HandleOptions(w, origin[0]);
+			allowed := mage.Config.CORS.HandleOptions(w, origin);
 			if !allowed {
 				w.WriteHeader(http.StatusForbidden);
 				return;

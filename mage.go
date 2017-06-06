@@ -13,7 +13,6 @@ import (
 	"distudio.com/mage/cors"
 	"strings"
 	"io/ioutil"
-
 	"fmt"
 )
 
@@ -178,12 +177,21 @@ func (mage *mage) Run(w http.ResponseWriter, req *http.Request) {
 
 	//if we enforce the hostname and the request hostname doesn't match, we redirect to the requested host
 	//host is in the form domainname.com
-	if mage.Config.EnforceHostnameRedirect!= "" && mage.Config.EnforceHostnameRedirect != req.Host {
-		hst := fmt.Sprintf("%s%s", mage.Config.EnforceHostnameRedirect, req.URL.Path);
+	if mage.Config.EnforceHostnameRedirect != "" && mage.Config.EnforceHostnameRedirect != req.Host {
+		scheme := "http://";
+		if req.URL.Scheme == "https" {
+			scheme = "https://";
+		}
+
+		hst := fmt.Sprintf("%s%s%s", scheme, mage.Config.EnforceHostnameRedirect, req.URL.Path);
+
 		if req.URL.RawQuery != "" {
 			hst = fmt.Sprintf("%s?%s", hst, req.URL.RawQuery);
 		}
+
 		http.Redirect(w, req, hst, http.StatusMovedPermanently);
+		renderer := TextRenderer{};
+		renderer.Render(w);
 		return;
 	}
 

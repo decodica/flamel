@@ -54,8 +54,6 @@ type MageConfig struct {
 	MaxFileUploadSize      int64
 	//true if the server suport Cross Origin Request
 	CORS *cors.Cors
-
-	//used to enforce redirect to base host url
 	EnforceHostnameRedirect string
 }
 
@@ -195,11 +193,14 @@ func (mage *mage) Run(w http.ResponseWriter, req *http.Request) {
 		return;
 	}
 
-	origin, hasOrigin := req.Header["Origin"];
+	origin := req.Header.Get("Origin");
+
+
+	hasOrigin := origin != "";
 
 	//handle CORS requests
 	if hasOrigin && mage.Config.CORS != nil && req.Method == http.MethodOptions {
-		mage.Config.CORS.HandleOptions(w, origin[0]);
+		mage.Config.CORS.HandleOptions(w, origin);
 		w.Header().Set("Content-Type", "text/html; charset=utf8");
 		renderer := TextRenderer{};
 		renderer.Render(w);
@@ -271,7 +272,7 @@ func (mage *mage) Run(w http.ResponseWriter, req *http.Request) {
 		}
 
 		if hasOrigin {
-			allowed := mage.Config.CORS.HandleOptions(w, origin[0]);
+			allowed := mage.Config.CORS.HandleOptions(w, origin);
 			if !allowed {
 				w.WriteHeader(http.StatusForbidden);
 				return;

@@ -3,7 +3,6 @@ package cors
 import (
 	"fmt"
 	"net/http"
-	"log"
 )
 
 type Cors struct {
@@ -59,17 +58,16 @@ func (c Cors) AMPForUrl(url string) bool {
 //returns true if origin has been allowed
 func (c *Cors) HandleOptions(w http.ResponseWriter, origin string) bool {
 	allowed := false;
-		/*if we support AMP we check only for:
-		* 1. *.ampproject.org
-		* 2. *.amp.cloudflare.com
-		* 3. our origin
-		* for reference: https://github.com/ampproject/amphtml/blob/master/spec/amp-cors-requests.md
-		*/
+	/*if we support AMP we check only for:
+	* 1. *.ampproject.org
+	* 2. *.amp.cloudflare.com
+	* 3. our origin
+	* for reference: https://github.com/ampproject/amphtml/blob/master/spec/amp-cors-requests.md
+	*/
 	if c.amp && (
-		origin[:len(amp_allowed_origin_ampproject)] == amp_allowed_origin_ampproject ||
-			origin[:len(amp_allowed_origin_cloudflare)] == amp_allowed_origin_cloudflare) {
+		origin[len(origin) - len(amp_allowed_origin_ampproject):] == amp_allowed_origin_ampproject ||
+			origin[len(origin) - len(amp_allowed_origin_cloudflare):] == amp_allowed_origin_cloudflare) {
 
-		log.Printf("Valid AMP origin %s", origin);
 		allowed = true;
 		w.Header().Set("Access-Control-Allow-Origin", origin);
 
@@ -107,7 +105,6 @@ func (c *Cors) ValidateAMP(w http.ResponseWriter, source string) error {
 			return nil;
 		}
 	}
-	log.Printf("INVALID AMP SOURCE: %s!", source);
 	return fmt.Errorf("Invalid AMP origin request! Source is: %s", source);
 }
 

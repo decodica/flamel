@@ -69,7 +69,7 @@ func mapStructure(t reflect.Type, s *encodedStruct, parentName string) {
 
 		tags := strings.Split(field.Tag.Get(tag_domain), ",")
 		tagName := tags[0]
-		//todo: skip also datastore skippable data
+
 		if tagName == tag_skip {
 			continue
 		}
@@ -372,12 +372,16 @@ func decodeField(field reflect.Value, p datastore.Property) error {
 
 //returns the name of a reference
 func referenceName(parentName string, refName string) string {
+	if parentName == "" {
+		return refName;
+	}
 	return parentName + "." + refName;
 }
 
 
 func entityPropName(entityName string, fieldName string) string {
-	return fmt.Sprintf("%s.%s", entityName, fieldName);
+	return fieldName;
+	//return fmt.Sprintf("%s.%s", entityName, fieldName);
 }
 
 //takes a property field name and returns it's base
@@ -444,7 +448,7 @@ func toPropertyList(modelable modelable) ([]datastore.Property, error) {
 			p.NoIndex = true;
 		}
 
-		p.Name = referenceName(sType.Name(), field.Name);
+		p.Name = referenceName("", field.Name);
 
 		if rm, ok := model.references[i]; ok {
 			ref := rm.Modelable.getModel();

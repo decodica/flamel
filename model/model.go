@@ -172,7 +172,7 @@ func index(m modelable) {
 	} else {
 		//map the struct
 		model.structure.encodedStruct = newEncodedStruct();
-		mapStructure(mType, model.structure.encodedStruct, name);
+		mapStructure(mType, model.structure.encodedStruct, "");
 	}
 
 	model.structure.structName = name;

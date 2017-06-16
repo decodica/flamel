@@ -99,13 +99,13 @@ func mapStructure(t reflect.Type, s *encodedStruct, parentName string) {
 					sValue.childStruct.structName = sName
 					break
 				}
-				//todo: add to map anyway, so that the second tyme we get a cached value
+				//todo: add to map anyway, so that the second time we get a cached value
 				sMap := make(map[string]encodedField);
 				childStruct := &encodedStruct{structName:sName, fieldNames:sMap};
 				sValue.childStruct = childStruct;
 				if reflect.PtrTo(fType).Implements(typeOfModelable) {
-					sName = fType.Name();
-					mapStructure(fType, childStruct, sName);
+					//we have a reference, so we must treat it as a root struct
+					mapStructure(fType, childStruct, "");
 				} else {
 					mapStructure(fType, childStruct, field.Name);
 				}

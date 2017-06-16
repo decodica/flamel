@@ -113,6 +113,41 @@ func (model *Model) Load(props []datastore.Property) error {
 	return fromPropertyList(model.modelable, props);
 }
 
+func modelOf(src interface{}) *Model {
+	m, ok := src.(modelable);
+	if ok {
+		return m.getModel();
+	}
+
+	//if src is not a modelable we check if it is a slice of modelables
+	dstv := reflect.ValueOf(src);
+
+	var val reflect.Value;
+
+	if dstv.Kind() == reflect.Ptr {
+		val = dstv.Elem();
+		if val.Kind() == reflect.Slice {
+			val = val.Index(0);
+		} else if val.Kind() == reflect.Struct {
+			return modelOf(val);
+		} else {
+			return nil;
+		}
+	} else if dstv.Kind() == reflect.Slice {
+		val = dstv.Index(0);
+	} else {
+		//not a container and not a modelable, return nil
+		return nil;
+	}
+
+	m, ok = val.Interface().(modelable);
+	if ok {
+		return m.getModel();
+	}
+
+	return nil;
+}
+
 //returns true if the model has stale references
 //todo: control validity - this may be incorrect with equality
 func (model *Model) hasStaleReferences() bool {

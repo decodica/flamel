@@ -46,6 +46,8 @@ appengine-generated/
 .idea/dynamic.xml
 .idea/uiDesigner.xml
 
+projectFilesBackup
+
 # Gradle:
 .idea/gradle.xml
 .idea/libraries

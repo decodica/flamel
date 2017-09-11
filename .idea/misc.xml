@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project version="4">
-  <component name="ProjectRootManager" version="2" languageLevel="JDK_1_6" project-jdk-name="Go 1.6 (appengine-1.9.35)" project-jdk-type="Go SDK" />
+  <component name="GOROOT" path="$PROJECT_DIR$/../../../../goroot" />
   <component name="masterDetails">
     <states>
       <state key="GlobalLibrariesConfigurable.UI">

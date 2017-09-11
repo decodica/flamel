@@ -19,15 +19,19 @@ func ReadMulti(ctx context.Context, dst interface{}) error {
 //Batch version of read. It wraps datastore.GetMulti and adapts it to the modelable fw
 func readMulti(ctx context.Context, dst interface{}) error {
 
-	dstv := reflect.ValueOf(dst);
+	collection := reflect.ValueOf(dst)
 
-	mod := modelOf(dst);
+	if collection.Kind() != reflect.Slice {
+		return fmt.Errorf("Invalid container: container kind must be slice. Kind %s provided", collection.Kind())
+	}
+
+	mod := modelOf(dst)
 	if mod == nil {
 		return errors.New("Can't determine model of provided dst.");
 	}
 
 	//get the array the slice points to
-	collection := dstv;
+
 	//save the references indexes
 	refsi := make([]int, 0, 0);
 	for k, _ := range mod.references {
@@ -40,7 +44,7 @@ func readMulti(ctx context.Context, dst interface{}) error {
 	for i := 0; i < l; i++ {
 		mble, ok := collection.Index(i).Interface().(modelable);
 		if !ok {
-			return fmt.Errorf("Invalid container of type %s. Container must be a slice of modelables", dstv.Elem().Type().Name());
+			return fmt.Errorf("Invalid container of type %s. Container must be a slice of modelables", collection.Elem().Type().Name());
 		}
 
 		if mble.getModel().Key == nil {

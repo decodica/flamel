@@ -191,6 +191,63 @@ func (query *Query) GetAll(ctx context.Context, dst interface{}) error {
 	return nil;
 }
 
+func (query *Query) GetMulti(ctx context.Context, dst interface{}) error {
+	if query.dq == nil {
+		return errors.New("Invalid query. Query is nil")
+	}
+
+	defer func() {
+		query = nil
+	}()
+
+	if query.projection {
+		return errors.New("Invalid query. Can't use projection queries with GetMulti")
+	}
+
+	it := query.dq.Run(ctx)
+
+	dstv := reflect.ValueOf(dst);
+
+	if !isValidContainer(dstv) {
+		return fmt.Errorf("Invalid container of type %s. Container must be a modelable slice", dstv.Elem().Type().Name());
+	}
+
+	modelables := dstv.Elem()
+
+	for {
+		key, err := it.Next(nil)
+
+		if err == datastore.Done {
+			break;
+		}
+
+		if err != nil {
+			return err
+		}
+
+		newModelable := reflect.New(query.mType)
+		m, ok := newModelable.Interface().(modelable)
+
+		if !ok {
+			err = fmt.Errorf("Can't cast struct of type %s to modelable", query.mType.Name())
+			query = nil
+			return err
+		}
+
+		//Note: indexing here assigns the address of m to the Model.
+		//this means that if a user supplied a populated dst we must reindex its elements before returning
+		//or the model will point to a different modelable
+		index(m)
+
+		model := m.getModel()
+		model.Key = key
+
+		modelables.Set(reflect.Append(modelables, reflect.ValueOf(m)))
+	}
+
+	return ReadMulti(ctx, reflect.Indirect(dstv).Interface())
+}
+
 func (query *Query) get(ctx context.Context, dst interface{}) (*datastore.Cursor, error) {
 	more := false;
 	rc := 0;

@@ -10,6 +10,7 @@ import (
 	"strings"
 	"encoding/gob"
 	"google.golang.org/appengine/memcache"
+	"log"
 )
 
 const ref_model_prefix string = "ref_";
@@ -114,34 +115,40 @@ func (model *Model) Load(props []datastore.Property) error {
 }
 
 func modelOf(src interface{}) *Model {
-	m, ok := src.(modelable);
+	log.Printf("src is of type", reflect.TypeOf(src))
+	m, ok := src.(modelable)
 	if ok {
-		return m.getModel();
+		return m.getModel()
 	}
+
+
 
 	//if src is not a modelable we check if it is a slice of modelables
-	dstv := reflect.ValueOf(src);
+	dstv := reflect.ValueOf(src)
 
-	var val reflect.Value;
+	var val reflect.Value
 
 	if dstv.Kind() == reflect.Ptr {
-		val = dstv.Elem();
+		val = dstv.Elem()
 		if val.Kind() == reflect.Slice {
-			val = val.Index(0);
+			typ := val.Type().Elem()
+			val = reflect.New(typ.Elem())
 		} else if val.Kind() == reflect.Struct {
-			return modelOf(val);
+			return modelOf(val)
 		} else {
-			return nil;
+			return nil
 		}
 	} else if dstv.Kind() == reflect.Slice {
-		val = dstv.Index(0);
+		typ := reflect.TypeOf(src).Elem()
+		val = reflect.New(typ.Elem())
 	} else {
 		//not a container and not a modelable, return nil
-		return nil;
+		return nil
 	}
 
-	m, ok = val.Interface().(modelable);
+	m, ok = val.Interface().(modelable)
 	if ok {
+		index(m)
 		return m.getModel();
 	}
 

@@ -9,6 +9,7 @@ import (
 	"google.golang.org/appengine"
 	"errors"
 	"time"
+	"sync"
 )
 
 
@@ -42,12 +43,17 @@ func newEncodedStruct() *encodedStruct {
 
 //Keeps track of encoded structs according to their reflect.Type.
 //It is used as a cache to avoid to map structs that have been already mapped
+var encodedStructsMutex sync.Mutex
 var encodedStructs = map[reflect.Type]*encodedStruct{}
 
-
+func mapStructure(t reflect.Type, s *encodedStruct, parentName string) {
+	encodedStructsMutex.Lock()
+	mapStructureLocked(t, s, parentName)
+	encodedStructsMutex.Unlock()
+}
 //maps a structure into a linked list representation of its fields.
 //It is used to ease the conversion between the Model framework and the datastore
-func mapStructure(t reflect.Type, s *encodedStruct, parentName string) {
+func mapStructureLocked(t reflect.Type, s *encodedStruct, parentName string) {
 	if t == typeOfModel || t == typeOfStructure {
 		return
 	}
@@ -105,9 +111,9 @@ func mapStructure(t reflect.Type, s *encodedStruct, parentName string) {
 				sValue.childStruct = childStruct;
 				if reflect.PtrTo(fType).Implements(typeOfModelable) {
 					//we have a reference, so we must treat it as a root struct
-					mapStructure(fType, childStruct, "");
+					mapStructureLocked(fType, childStruct, "");
 				} else {
-					mapStructure(fType, childStruct, field.Name);
+					mapStructureLocked(fType, childStruct, field.Name);
 				}
 			break;
 			case reflect.Ptr:
@@ -117,7 +123,7 @@ func mapStructure(t reflect.Type, s *encodedStruct, parentName string) {
 					sMap := make(map[string]encodedField);
 					childStruct := &encodedStruct{structName:sName, fieldNames:sMap};
 					sValue.childStruct = childStruct;
-					mapStructure(fieldElem, childStruct, field.Name);
+					mapStructureLocked(fieldElem, childStruct, field.Name);
 					break
 				}
 			fallthrough

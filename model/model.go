@@ -10,7 +10,6 @@ import (
 	"strings"
 	"encoding/gob"
 	"google.golang.org/appengine/memcache"
-	"log"
 )
 
 const ref_model_prefix string = "ref_";
@@ -115,7 +114,6 @@ func (model *Model) Load(props []datastore.Property) error {
 }
 
 func modelOf(src interface{}) *Model {
-	log.Printf("src is of type", reflect.TypeOf(src))
 	m, ok := src.(modelable)
 	if ok {
 		return m.getModel()

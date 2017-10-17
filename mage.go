@@ -33,7 +33,7 @@ type Authenticable interface {
 type Application interface {
 	NewUser(ctx context.Context) Authenticable
 	OnCreate(ctx context.Context) context.Context
-	CreatePage(ctx context.Context, path string) (error, Page)
+	CreateResponse(ctx context.Context, path string) (error, Response)
 	OnDestroy(ctx context.Context)
 	AuthenticatorForPath(path string) Authenticator
 }
@@ -63,9 +63,9 @@ func DefaultConfig() MageConfig {
 	config.TokenAuthenticationKey = token_auth_key
 	config.TokenExpirationKey = token_expiry_key
 	config.TokenExpiration = 60 * time.Minute
-	config.MaxFileUploadSize = DEFAULT_MAX_FILE_SIZE;
+	config.MaxFileUploadSize = DEFAULT_MAX_FILE_SIZE
 
-	return config;
+	return config
 }
 
 const (
@@ -74,17 +74,17 @@ const (
 	token_expiry_key string = "SSID_EXP"
 
 	//request related special vars
-	REQUEST_USER = "mage-user";
-	REQUEST_INPUTS = "request-inputs";
-	REQUEST_METHOD = "method";
-	REQUEST_IPV4 = "remote-address";
+	REQUEST_USER = "mage-user"
+	REQUEST_INPUTS = "request-inputs"
+	REQUEST_METHOD = "method"
+	REQUEST_IPV4 = "remote-address"
 	REQUEST_JSON_DATA = "__json__"
 
 	//default at 4 megs
-	DEFAULT_MAX_FILE_SIZE = (1 << 20) * 4;
+	DEFAULT_MAX_FILE_SIZE = (1 << 20) * 4
 
-	_error_parse_request string = "Error parsing request data: %v";
-	_error_create_page string = "Error creating page: %v";
+	_error_parse_request string = "Error parsing request data: %v"
+	_error_create_page string = "Error creating page: %v"
 )
 
 //mage is a singleton
@@ -95,7 +95,7 @@ var bucketName string
 func GetBucketName(c context.Context) (string, error) {
 	if appengine.IsDevAppServer() {
 		appid := appengine.AppID(c)
-		return "staging." + appid + ".appspot.com", nil;
+		return "staging." + appid + ".appspot.com", nil
 	}
 	var err error
 	if bucketName == "" {
@@ -110,7 +110,7 @@ func GetBucketName(c context.Context) (string, error) {
 func ImageServingUrlString(c context.Context, fileName string) (string, error) {
 
 	if fileName == "" {
-		return "", errors.New("Filename must not be empty")
+		return "", errors.New("filename must not be empty")
 	}
 
 	bucket, err := GetBucketName(c)
@@ -157,7 +157,7 @@ func MageInstance() *mage {
 		return mageInstance
 	}
 
-	config := DefaultConfig();
+	config := DefaultConfig()
 
 	mageInstance = &mage{Config: config}
 	return mageInstance
@@ -171,74 +171,74 @@ func (mage *mage) Run(w http.ResponseWriter, req *http.Request) {
 
 	ctx := appengine.NewContext(req)
 
-	ctx = mage.app.OnCreate(ctx);
+	ctx = mage.app.OnCreate(ctx)
 
 	//if we enforce the hostname and the request hostname doesn't match, we redirect to the requested host
 	//host is in the form domainname.com
 	if mage.Config.EnforceHostnameRedirect != "" && mage.Config.EnforceHostnameRedirect != req.Host {
-		scheme := "http://";
+		scheme := "http://"
 		if req.URL.Scheme == "https" {
-			scheme = "https://";
+			scheme = "https://"
 		}
 
-		hst := fmt.Sprintf("%s%s%s", scheme, mage.Config.EnforceHostnameRedirect, req.URL.Path);
+		hst := fmt.Sprintf("%s%s%s", scheme, mage.Config.EnforceHostnameRedirect, req.URL.Path)
 
 		if req.URL.RawQuery != "" {
-			hst = fmt.Sprintf("%s?%s", hst, req.URL.RawQuery);
+			hst = fmt.Sprintf("%s?%s", hst, req.URL.RawQuery)
 		}
 
-		http.Redirect(w, req, hst, http.StatusMovedPermanently);
-		renderer := TextRenderer{};
-		renderer.Render(w);
+		http.Redirect(w, req, hst, http.StatusMovedPermanently)
+		renderer := TextRenderer{}
+		renderer.Render(w)
 		return;
 	}
 
-	origin := req.Header.Get("Origin");
+	origin := req.Header.Get("Origin")
 
 
-	hasOrigin := origin != "";
+	hasOrigin := origin != ""
 
 	//handle CORS requests
 	if hasOrigin && mage.Config.CORS != nil && req.Method == http.MethodOptions {
-		mage.Config.CORS.HandleOptions(w, origin);
-		w.Header().Set("Content-Type", "text/html; charset=utf8");
-		renderer := TextRenderer{};
-		renderer.Render(w);
-		return;
+		mage.Config.CORS.HandleOptions(w, origin)
+		w.Header().Set("Content-Type", "text/html; charset=utf8")
+		renderer := TextRenderer{}
+		renderer.Render(w)
+		return
 	}
 
-	err, page := mage.app.CreatePage(ctx, req.URL.Path);
+	err, response := mage.app.CreateResponse(ctx, req.URL.Path)
 
 	if err != nil {
-		renderer := TextRenderer{};
-		renderer.Data = fmt.Sprintf(_error_create_page, err);
-		w.WriteHeader(http.StatusInternalServerError);
-		renderer.Render(w);
-		return;
+		renderer := TextRenderer{}
+		renderer.Data = fmt.Sprintf(_error_create_page, err)
+		w.WriteHeader(http.StatusInternalServerError)
+		renderer.Render(w)
+		return
 	}
 
-	magePage := newGaemsPage(page);
-	defer mage.destroy(ctx, magePage);
+	innerResponse := newInnerResponse(response)
+	defer mage.destroy(ctx, innerResponse)
 
 	//add inputs to the context object
-	ctx, err = mage.parseRequestInputs(ctx, req);
+	ctx, err = mage.parseRequestInputs(ctx, req)
 	if err != nil {
-		renderer := TextRenderer{};
-		renderer.Data = fmt.Sprintf(_error_parse_request, err);
-		w.WriteHeader(http.StatusInternalServerError);
-		renderer.Render(w);
+		renderer := TextRenderer{}
+		renderer.Data = fmt.Sprintf(_error_parse_request, err)
+		w.WriteHeader(http.StatusInternalServerError)
+		renderer.Render(w)
 		return;
 	}
 
-	authenticator := mage.app.AuthenticatorForPath(req.URL.Path);
+	authenticator := mage.app.AuthenticatorForPath(req.URL.Path)
 
 	if authenticator != nil {
-		user := mage.app.NewUser(ctx);
-		ctx = authenticator.Authenticate(ctx, user);
+		user := mage.app.NewUser(ctx)
+		ctx = authenticator.Authenticate(ctx, user)
 	}
 
 	//add headers and cookies
-	for _, v := range magePage.out.cookies {
+	for _, v := range innerResponse.out.cookies {
 		http.SetCookie(w, v)
 	}
 
@@ -247,43 +247,43 @@ func (mage *mage) Run(w http.ResponseWriter, req *http.Request) {
 
 		//handle the AMP case
 		if mage.Config.CORS.AMPForUrl(req.URL.Path) {
-			AMPsource, hasSource := req.URL.Query()[cors.AMP_SOURCE_ORIGIN_KEY];
+			AMPsource, hasSource := req.URL.Query()[cors.AMP_SOURCE_ORIGIN_KEY]
 
 			//if the source is not set the AMP request is invalid
 			if !hasSource || len(AMPsource) == 0 {
-				w.WriteHeader(http.StatusNotAcceptable);
+				w.WriteHeader(http.StatusNotAcceptable)
 				return;
 			}
 
 			//if the source is set we check if the AMP-Same-Origin is set
-			hasSameOrigin := req.Header.Get(cors.AMP_SAME_ORIGIN_HEADER_KEY) == "true";
+			hasSameOrigin := req.Header.Get(cors.AMP_SAME_ORIGIN_HEADER_KEY) == "true"
 
 			if !(hasOrigin || hasSameOrigin) {
-				w.WriteHeader(http.StatusNotAcceptable);
-				return;
+				w.WriteHeader(http.StatusNotAcceptable)
+				return
 			}
 
 			//if the value of AMP_SAME_ORIGIN is different from true we validate the origin
 			//amongst those accepted
 			if mage.Config.CORS.ValidateAMP(w, AMPsource[0]) != nil {
-				w.WriteHeader(http.StatusNotAcceptable);
-				return;
+				w.WriteHeader(http.StatusNotAcceptable)
+				return
 			}
 		}
 
 		if hasOrigin {
-			allowed := mage.Config.CORS.HandleOptions(w, origin);
+			allowed := mage.Config.CORS.HandleOptions(w, origin)
 			if !allowed {
-				w.WriteHeader(http.StatusForbidden);
-				return;
+				w.WriteHeader(http.StatusForbidden)
+				return
 			}
 		}
 	}
 
-	redirect := magePage.process(ctx);
+	redirect := innerResponse.process(ctx)
 
 	//add the redirect header if needed
-	for k, v := range magePage.out.headers {
+	for k, v := range innerResponse.out.headers {
 		w.Header().Set(k, v)
 	}
 
@@ -292,110 +292,110 @@ func (mage *mage) Run(w http.ResponseWriter, req *http.Request) {
 	}
 
 	if redirect.Status >= 400 {
-		w.WriteHeader(redirect.Status);
+		w.WriteHeader(redirect.Status)
 	}
 
-	defer magePage.out.Renderer.Render(w);
+	defer innerResponse.out.Renderer.Render(w)
 }
 
-func (mage *mage) destroy(ctx context.Context, page *magePage) {
-	page.page.OnDestroy(ctx);
-	mage.app.OnDestroy(ctx);
+func (mage *mage) destroy(ctx context.Context, res *innerResponse) {
+	res.response.OnDestroy(ctx)
+	mage.app.OnDestroy(ctx)
 }
 
 func (mage mage) parseRequestInputs(ctx context.Context, req *http.Request) (context.Context, error) {
-	reqValues := make(RequestInputs);
+	reqValues := make(RequestInputs)
 
 	//todo: put in context
-	method := requestInput{};
-	m := make([]string, 1, 1);
-	m[0] = req.Method;
-	method.values = m;
-	reqValues[REQUEST_METHOD] = method;
+	method := requestInput{}
+	m := make([]string, 1, 1)
+	m[0] = req.Method
+	method.values = m
+	reqValues[REQUEST_METHOD] = method
 
 
-	ipV := requestInput{};
-	ip := make([]string, 0);
-	ip = append(ip, req.RemoteAddr);
-	ipV.values = ip;
-	reqValues[REQUEST_IPV4] = ipV;
+	ipV := requestInput{}
+	ip := make([]string, 0)
+	ip = append(ip, req.RemoteAddr)
+	ipV.values = ip
+	reqValues[REQUEST_IPV4] = ipV
 
 	//get request params
 	switch req.Method {
 	case http.MethodGet:
 		for k, _ := range req.URL.Query() {
-			s := make([]string, 1, 1);
-			v := req.URL.Query().Get(k);
-			s[0] = v;
-			i := requestInput{};
-			i.values = s;
-			reqValues[k] = i;
+			s := make([]string, 1, 1)
+			v := req.URL.Query().Get(k)
+			s[0] = v
+			i := requestInput{}
+			i.values = s
+			reqValues[k] = i
 		}
-		break;
+		break
 	case http.MethodPut:
 		fallthrough
 	case http.MethodPost:
-		reqType := req.Header.Get("Content-Type");
+		reqType := req.Header.Get("Content-Type")
 		//parse the multiform data if the request specifies it as its content type
 		if strings.Contains(reqType, "multipart/form-data") {
-			err := req.ParseMultipartForm(mage.Config.MaxFileUploadSize);
+			err := req.ParseMultipartForm(mage.Config.MaxFileUploadSize)
 			if err != nil {
-				return ctx, err;
+				return ctx, err
 			}
 		} else {
-			err := req.ParseForm();
+			err := req.ParseForm()
 			if err != nil {
-				return ctx, err;
+				return ctx, err
 			}
 		}
 
 		if  strings.Contains(reqType, "application/json") {
-			s := make([]string, 1, 1);
-			i := requestInput{};
-			str, _ := ioutil.ReadAll(req.Body);
-			s[0] = string(str);
-			i.values = s;
-			reqValues[REQUEST_JSON_DATA] = i;
-			break;
+			s := make([]string, 1, 1)
+			i := requestInput{}
+			str, _ := ioutil.ReadAll(req.Body)
+			s[0] = string(str)
+			i.values = s
+			reqValues[REQUEST_JSON_DATA] = i
+			break
 		}
 
 		for k , _ := range req.Form {
-			v := req.Form[k];
-			i := requestInput{};
-			i.values = v;
-			reqValues[k] = i;
+			v := req.Form[k]
+			i := requestInput{}
+			i.values = v
+			reqValues[k] = i
 		}
 	case http.MethodDelete:
 		for k, _ := range req.URL.Query() {
-			s := make([]string, 1, 1);
-			v := req.URL.Query().Get(k);
-			s[0] = v;
-			i := requestInput{};
-			i.values = s;
-			reqValues[k] = i;
+			s := make([]string, 1, 1)
+			v := req.URL.Query().Get(k)
+			s[0] = v
+			i := requestInput{}
+			i.values = s
+			reqValues[k] = i
 		}
-		break;
+		break
 	default:
 	}
 
 	//get the headers
 	for k, _ := range req.Header {
-		i := requestInput{};
-		s := make([]string, 1, 1);
-		s[0] = req.Header.Get(k);
-		i.values = s;
-		reqValues[k] = i;
+		i := requestInput{}
+		s := make([]string, 1, 1)
+		s[0] = req.Header.Get(k)
+		i.values = s
+		reqValues[k] = i
 	}
 
 	//get cookies
 	for _, c := range req.Cookies() {
 		//threat the auth token apart
-		i := requestInput{};
-		s := make([]string, 1, 1);
-		s[0] = c.Value;
-		i.values = s;
-		reqValues[c.Name] = i;
+		i := requestInput{}
+		s := make([]string, 1, 1)
+		s[0] = c.Value
+		i.values = s
+		reqValues[c.Name] = i
 	}
 
-	return context.WithValue(ctx, REQUEST_INPUTS, reqValues), nil;
+	return context.WithValue(ctx, REQUEST_INPUTS, reqValues), nil
 }

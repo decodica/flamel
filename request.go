@@ -19,7 +19,6 @@ func (req requestInput) Value() string {
 	if !req.Multiple() && len(req.values) > 0 {
 		return req.values[0]
 	}
-
 	return ""
 }
 
@@ -42,36 +41,36 @@ type Renderer interface {
 	Render(w http.ResponseWriter) error
 }
 
-type RequestOutput struct {
+type ResponseOutput struct {
 	cookies     []*http.Cookie
 	headers     map[string]string
 	Renderer    Renderer
 }
 
-func newRequestOutput() RequestOutput {
-	out := RequestOutput{}
+func newRequestOutput() ResponseOutput {
+	out := ResponseOutput{}
 	out.headers = make(map[string]string)
-	out.Renderer = &TextRenderer{Data:""};
+	out.Renderer = &TextRenderer{Data:""}
 	return out
 }
 
-func (out *RequestOutput) AddHeader(key string, value string) error {
+func (out *ResponseOutput) AddHeader(key string, value string) error {
 	out.headers[key] = value
 	return nil
 }
 
-func (out *RequestOutput) AddCookie(cookie http.Cookie) {
+func (out *ResponseOutput) AddCookie(cookie http.Cookie) {
 	out.cookies = append(out.cookies, &cookie)
 }
 
-func (out *RequestOutput) RemoveCookie(name string) {
+func (out *ResponseOutput) RemoveCookie(name string) {
 	index := -1
-	expires := time.Unix(0,0);
+	expires := time.Unix(0,0)
 	for i, v := range out.cookies {
 		if v.Name == name {
-			c := out.cookies[i];
-			c.Value = "";
-			c.Expires = expires;
+			c := out.cookies[i]
+			c.Value = ""
+			c.Expires = expires
 			break
 		}
 	}
@@ -82,9 +81,9 @@ func (out *RequestOutput) RemoveCookie(name string) {
 		out.cookies = out.cookies[:len(out.cookies)-1]
 	}
 
-	cookie := http.Cookie{};
-	cookie.Name = name;
-	cookie.Expires = expires;
-	cookie.MaxAge = 0;
-	out.AddCookie(cookie);
+	cookie := http.Cookie{}
+	cookie.Name = name
+	cookie.Expires = expires
+	cookie.MaxAge = 0
+	out.AddCookie(cookie)
 }

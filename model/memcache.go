@@ -19,170 +19,164 @@ type cacheModel struct {
 //checks if cache Key is valid
 //as per documentation Key max length is set at 250 bytes
 func validCacheKey(Key string) bool {
-	bs := []byte(Key);
-	valid := len(bs) <= 250;
-	return valid;
+	bs := []byte(Key)
+	valid := len(bs) <= 250
+	return valid
 }
 
 //Saves the modelable representation and all related references to memcache.
 //It assumes that there are no stale references
 func saveInMemcache(ctx context.Context, m modelable) (err error) {
 	//skip unregistered models
-	model := m.getModel();
+	model := m.getModel()
 
 	//a modelable must be registered to be saved in memcache
 	if !model.registered {
-		panic("Modelable not registered");
+		return fmt.Errorf("modelable %v is not registered", m)
 	}
 
 	if nil == model.Key {
-		return fmt.Errorf("No Key registered for modelable %s. Can't save in memcache.", model.structName);
+		return fmt.Errorf("no Key registered for modelable %s. Can't save in memcache.", model.structName);
 	}
 
-	i := memcache.Item{};
-	i.Key = model.EncodedKey();
+	i := memcache.Item{}
+	i.Key = model.EncodedKey()
 
 	if !validCacheKey(i.Key) {
-		return fmt.Errorf("cacheModel box Key %s is too long", i.Key);
+		return fmt.Errorf("cacheModel box Key %s is too long", i.Key)
 	}
 
-	keyMap := make(KeyMap);
+	keyMap := make(KeyMap)
 
 	for k, _ := range model.references {
-		ref := model.references[k];
-		r := ref.Modelable;
-		rm := r.getModel();
+		ref := model.references[k]
+		r := ref.Modelable
+		rm := r.getModel()
 
 		//throw an error if the model Key and the reference Key do not coincide
 		if rm.Key == nil {
-			return fmt.Errorf("Can't save to memcache. reference model Key is nil for reference: %+v", ref);
+			return fmt.Errorf("can't save to memcache. reference model Key is nil for reference: %+v", ref)
 		}
 
 		if rm.Key != ref.Key {
-			return fmt.Errorf("Can't save to memcache. Key of the model doesn't equal the Key of the reference for reference %+v", ref);
+			return fmt.Errorf("can't save to memcache. Key of the model doesn't equal the Key of the reference for reference %+v", ref)
 		}
 
-		err = saveInMemcache(ctx, r);
+		err = saveInMemcache(ctx, r)
 
 		if err != nil {
-			return err;
+			return err
 		}
 
 		if rm.Key != nil {
-			keyMap[k] = rm.EncodedKey();
+			keyMap[k] = rm.EncodedKey()
 		}
 	}
 
-	box := cacheModel{Keys:keyMap};
-	box.Modelable = m;
-	i.Object = box;
+	box := cacheModel{Keys:keyMap}
+	box.Modelable = m
+	i.Object = box
 
-	//log.Printf("Saving modelable %+v to memcache at Key %s", m, i.Key);
+	err = memcache.Gob.Set(ctx, &i)
 
-	err = memcache.Gob.Set(ctx, &i);
-
-	if err != nil {
-		panic(err);
-	}
-
-	return err;
+	return err
 }
 
 func loadFromMemcache(ctx context.Context, m modelable) (err error) {
-	model := m.getModel();
+	model := m.getModel()
 
 	if model.Key == nil {
-		return fmt.Errorf("No Key registered from modelable %s. Can't load from memcache.", model.structName)
+		return fmt.Errorf("no Key registered from modelable %s. Can't load from memcache", model.structName)
 	}
 
 	cKey := model.EncodedKey();
 
 	if !validCacheKey(cKey) {
-		return fmt.Errorf("cacheModel box Key %s is too long", cKey);
+		return fmt.Errorf("cacheModel box Key %s is too long", cKey)
 	}
 
-	box := cacheModel{Keys:make(map[int]string), Modelable:m};
+	box := cacheModel{Keys:make(map[int]string), Modelable:m}
 
-	_, err = memcache.Gob.Get(ctx, cKey, &box);
+	_, err = memcache.Gob.Get(ctx, cKey, &box)
 
 	if err != nil {
-		return err;
+		return err
 	}
 
 	for k, _ := range model.references {
 		if encodedKey, ok := box.Keys[k]; ok {
-			decodedKey, err := datastore.DecodeKey(encodedKey);
+			decodedKey, err := datastore.DecodeKey(encodedKey)
 			if err != nil {
-				return err;
+				return err
 			}
-			ref := model.references[k];
-			r := ref.Modelable;
-			rm := r.getModel();
-			rm.Key = decodedKey;
-			err = loadFromMemcache(ctx, ref.Modelable);
+			ref := model.references[k]
+			r := ref.Modelable
+			rm := r.getModel()
+			rm.Key = decodedKey
+			err = loadFromMemcache(ctx, ref.Modelable)
 			if err != nil {
-				return err;
+				return err
 			}
-			ref.Key = decodedKey;
-			model.references[k] = ref;
+			ref.Key = decodedKey
+			model.references[k] = ref
 			//assign the reference values to the box struct.
 			//this needs to be done so that the passing modelable is updated
-			field := reflect.Indirect(reflect.ValueOf(box.Modelable)).Field(k);
-			src := reflect.Indirect(reflect.ValueOf(r));
-			field.Set(src);
+			field := reflect.Indirect(reflect.ValueOf(box.Modelable)).Field(k)
+			src := reflect.Indirect(reflect.ValueOf(r))
+			field.Set(src)
 		}
 	}
 
 	//if there are no error we assign the value recovered from memcache to the modelable
 	defer func(error) {
 		if err == nil {
-			modValue := reflect.ValueOf(*model);
-			dstValue := reflect.Indirect(reflect.ValueOf(m));
+			modValue := reflect.ValueOf(*model)
+			dstValue := reflect.Indirect(reflect.ValueOf(m))
 			srcValue := reflect.Indirect(reflect.ValueOf(box.Modelable))
-			dstValue.Set(srcValue);
+			dstValue.Set(srcValue)
 			//set model to the modelable Model Field
 			for i := 0; i < dstValue.NumField(); i++ {
-				field := dstValue.Field(i);
-				fieldType := field.Type();
+				field := dstValue.Field(i)
+				fieldType := field.Type()
 				if fieldType == typeOfModel {
-					field.Set(modValue);
-					break;
+					field.Set(modValue)
+					break
 				}
 			}
 		}
 	}(err)
 
-	return err;
+	return err
 }
 
 func deleteFromMemcache(ctx context.Context, m modelable) (err error) {
-	model := m.getModel();
+	model := m.getModel()
 
 	if model.Key == nil {
-		return fmt.Errorf("No Key registered from modelable %s. Can't delete from memcache.", reflect.TypeOf(m).Elem().Name())
+		return fmt.Errorf("no Key registered from modelable %s. Can't delete from memcache", reflect.TypeOf(m).Elem().Name())
 	}
 
 	for k, _ := range model.references {
-		ref := model.references[k];
-		err := deleteFromMemcache(ctx, ref.Modelable);
+		ref := model.references[k]
+		err := deleteFromMemcache(ctx, ref.Modelable)
 		if err != nil {
-			return err;
+			return err
 		}
-		ref.Key = nil;
+		ref.Key = nil
 	}
 
-	cKey := model.EncodedKey();
+	cKey := model.EncodedKey()
 	if !validCacheKey(cKey) {
-		return fmt.Errorf("cacheModel box Key %s is too long", cKey);
+		return fmt.Errorf("cacheModel box Key %s is too long", cKey)
 	}
 
 	defer func(error) {
 		if err == nil {
-			model.Key = nil;
+			model.Key = nil
 		}
 	}(err)
 
-	return memcache.Delete(ctx, cKey);
+	return memcache.Delete(ctx, cKey)
 }
 
 /*func (data) cacheGet() error {

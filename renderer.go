@@ -16,7 +16,7 @@ type TemplateRenderer struct {
 }
 
 func (renderer *TemplateRenderer) Render(w http.ResponseWriter) error {
-	return renderer.Template.ExecuteTemplate(w, renderer.TemplateName, renderer.Data);
+	return renderer.Template.ExecuteTemplate(w, renderer.TemplateName, renderer.Data)
 }
 
 
@@ -25,7 +25,7 @@ type JSONRenderer struct {
 }
 
 func (renderer *JSONRenderer) Render(w http.ResponseWriter) error {
-	return json.NewEncoder(w).Encode(renderer.Data);
+	return json.NewEncoder(w).Encode(renderer.Data)
 }
 
 type TextRenderer struct {
@@ -33,8 +33,8 @@ type TextRenderer struct {
 }
 
 func (renderer *TextRenderer) Render(w http.ResponseWriter) error {
-	_, err := io.WriteString(w, renderer.Data);
-	return err;
+	_, err := io.WriteString(w, renderer.Data)
+	return err
 }
 
 type BlobRenderer struct {
@@ -42,6 +42,6 @@ type BlobRenderer struct {
 }
 
 func (renderer *BlobRenderer) Render(w http.ResponseWriter) error {
-	blobstore.Send(w, renderer.Data);
-	return nil;
+	blobstore.Send(w, renderer.Data)
+	return nil
 }

@@ -14,7 +14,7 @@ type Query struct {
 	projection bool
 }
 
-type Order uint8;
+type Order uint8
 
 const (
 	ASC Order = iota + 1
@@ -22,178 +22,177 @@ const (
 )
 
 func NewQuery(m modelable) *Query {
-	typ := reflect.TypeOf(m).Elem();
+	typ := reflect.TypeOf(m).Elem()
 
-	q := datastore.NewQuery(typ.Name());
+	q := datastore.NewQuery(typ.Name())
 	query := Query{
 		dq: q,
 		mType: typ,
 		projection: false,
 	}
-	return &query;
+	return &query
 }
 
 /**
 Filter functions
  */
 func (q *Query) WithModelable(field string, ref modelable) (*Query, error) {
-	refm := ref.getModel();
+	refm := ref.getModel()
 	if !refm.registered {
-		return nil, fmt.Errorf("Modelable reference is not registered %+v", ref);
+		return nil, fmt.Errorf("modelable reference is not registered %+v", ref)
 	}
 
 	if refm.Key == nil {
-		return nil, errors.New("Reference Key has not been set. Can't retrieve it from datastore");
+		return nil, errors.New("reference Key has not been set. Can't retrieve it from datastore")
 	}
 
 	if _, ok := q.mType.FieldByName(field); !ok {
-		return nil, fmt.Errorf("Struct of type %s has no field with name %s", q.mType.Name(), field);
+		return nil, fmt.Errorf("struct of type %s has no field with name %s", q.mType.Name(), field)
 	}
 
-	refName := referenceName(q.mType.Name(), field);
+	refName := referenceName(q.mType.Name(), field)
 
-	return q.WithField(fmt.Sprintf("%s = ", refName), refm.Key), nil;
+	return q.WithField(fmt.Sprintf("%s = ", refName), refm.Key), nil
 }
 
 func (q *Query) WithAncestor(ancestor modelable) (*Query, error) {
-	am := ancestor.getModel();
+	am := ancestor.getModel()
 	if am.Key == nil {
-		return nil, fmt.Errorf("Invalid ancestor. %s has empty Key", am.Name());
+		return nil, fmt.Errorf("invalid ancestor. %s has empty Key", am.Name())
 	}
 
-	q.dq = q.dq.Ancestor(am.Key);
-	return q, nil;
+	q.dq = q.dq.Ancestor(am.Key)
+	return q, nil
 }
 
 func (q *Query) WithField(field string, value interface{}) *Query {
-	prepared := entityPropName(q.mType.Name(), field);
-	q.dq = q.dq.Filter(prepared, value);
-	return q;
+	prepared := entityPropName(q.mType.Name(), field)
+	q.dq = q.dq.Filter(prepared, value)
+	return q
 }
 
 func (q *Query) OrderBy(field string, order Order) *Query {
-	prepared := entityPropName(q.mType.Name(), field);
+	prepared := entityPropName(q.mType.Name(), field)
 	if order == DESC {
-		prepared = fmt.Sprintf("-%s", prepared);
+		prepared = fmt.Sprintf("-%s", prepared)
 	}
-	q.dq = q.dq.Order(prepared);
-	return q;
+	q.dq = q.dq.Order(prepared)
+	return q
 }
 
 func (q *Query) OffsetBy(offset int) *Query {
-	q.dq = q.dq.Offset(offset);
-	return q;
+	q.dq = q.dq.Offset(offset)
+	return q
 }
 
 func (q *Query) Limit(limit int) *Query {
-	q.dq = q.dq.Limit(limit);
-	return q;
+	q.dq = q.dq.Limit(limit)
+	return q
 }
 
 func (q *Query) Count(ctx context.Context) (int, error) {
-	return q.dq.Count(ctx);
+	return q.dq.Count(ctx)
 }
 
 func (q *Query) Distinct(fields ...string) * Query {
-	pf := make([]string, 0, 0);
+	pf := make([]string, 0, 0)
 
 	for _ , v := range fields {
-		prepared := entityPropName(q.mType.Name(), v);
-		pf = append(pf, prepared);
+		prepared := entityPropName(q.mType.Name(), v)
+		pf = append(pf, prepared)
 	}
 
-	q.dq = q.dq.Project(pf...);
-	q.dq = q.dq.Distinct();
-	q.projection = true;
-	return q;
+	q.dq = q.dq.Project(pf...)
+	q.dq = q.dq.Distinct()
+	q.projection = true
+	return q
 }
 
 //Shorthand method to retrieve only the first entity satisfying the query
 //It is equivalent to a Get With limit 1
 func (q *Query) First(ctx context.Context, m modelable) (err error) {
-	q.dq = q.dq.Limit(1);
+	q.dq = q.dq.Limit(1)
 
 	mm := []modelable{}
 
-	err = q.GetAll(ctx, &mm);
+	err = q.GetAll(ctx, &mm)
 
 	if err != nil {
-		return err;
+		return err
 	}
 
 	if len(mm) > 0 {
-		src := reflect.Indirect(reflect.ValueOf(mm[0]));
-		reflect.Indirect(reflect.ValueOf(m)).Set(src);
-		index(m);
-		return nil;
+		src := reflect.Indirect(reflect.ValueOf(mm[0]))
+		reflect.Indirect(reflect.ValueOf(m)).Set(src)
+		index(m)
+		return nil
 	}
 
-	return datastore.ErrNoSuchEntity;
+	return datastore.ErrNoSuchEntity
 }
 
 func (query *Query) Get(ctx context.Context, dst interface{}) error {
 	if query.dq == nil {
-		return errors.New("Invalid query. Query is nil");
+		return errors.New("invalid query. Query is nil")
 	}
 
 	defer func() {
-		query = nil;
+		query = nil
 	}()
 
 	if !query.projection {
-		query.dq = query.dq.KeysOnly();
+		query.dq = query.dq.KeysOnly()
 	}
 
-	_, err := query.get(ctx, dst);
-
+	_, err := query.get(ctx, dst)
 
 	if err != nil && err != datastore.Done {
-		return err;
+		return err
 	}
 
-	return nil;
+	return nil
 }
 
 func (query *Query) GetAll(ctx context.Context, dst interface{}) error {
 	if query.dq == nil {
-		return errors.New("Invalid query. Query is nil");
+		return errors.New("invalid query. Query is nil")
 	}
 
 	defer func() {
-		query = nil;
+		query = nil
 	}()
 
 	if !query.projection {
-		query.dq = query.dq.KeysOnly();
+		query.dq = query.dq.KeysOnly()
 	}
 
 
-	var cursor *datastore.Cursor;
-	var e error;
+	var cursor *datastore.Cursor
+	var e error
 
-	done := false;
+	done := false
 
 	for !done {
 
 		if cursor != nil {
-			query.dq = query.dq.Start(*cursor);
+			query.dq = query.dq.Start(*cursor)
 		}
 
-		cursor, e = query.get(ctx, dst);
+		cursor, e = query.get(ctx, dst)
 
 		if e != datastore.Done && e != nil {
 			return e
 		}
 
-		done = e == datastore.Done;
+		done = e == datastore.Done
 	}
 
-	return nil;
+	return nil
 }
 
 func (query *Query) GetMulti(ctx context.Context, dst interface{}) error {
 	if query.dq == nil {
-		return errors.New("Invalid query. Query is nil")
+		return errors.New("invalid query. Query is nil")
 	}
 
 	defer func() {
@@ -201,15 +200,15 @@ func (query *Query) GetMulti(ctx context.Context, dst interface{}) error {
 	}()
 
 	if query.projection {
-		return errors.New("Invalid query. Can't use projection queries with GetMulti")
+		return errors.New("invalid query. Can't use projection queries with GetMulti")
 	}
 
 	it := query.dq.Run(ctx)
 
-	dstv := reflect.ValueOf(dst);
+	dstv := reflect.ValueOf(dst)
 
 	if !isValidContainer(dstv) {
-		return fmt.Errorf("Invalid container of type %s. Container must be a modelable slice", dstv.Elem().Type().Name());
+		return fmt.Errorf("invalid container of type %s. Container must be a modelable slice", dstv.Elem().Type().Name())
 	}
 
 	modelables := dstv.Elem()
@@ -229,7 +228,7 @@ func (query *Query) GetMulti(ctx context.Context, dst interface{}) error {
 		m, ok := newModelable.Interface().(modelable)
 
 		if !ok {
-			err = fmt.Errorf("Can't cast struct of type %s to modelable", query.mType.Name())
+			err = fmt.Errorf("can't cast struct of type %s to modelable", query.mType.Name())
 			query = nil
 			return err
 		}
@@ -249,66 +248,66 @@ func (query *Query) GetMulti(ctx context.Context, dst interface{}) error {
 }
 
 func (query *Query) get(ctx context.Context, dst interface{}) (*datastore.Cursor, error) {
-	more := false;
-	rc := 0;
-	it := query.dq.Run(ctx);
+	more := false
+	rc := 0
+	it := query.dq.Run(ctx)
 
-	dstv := reflect.ValueOf(dst);
+	dstv := reflect.ValueOf(dst)
 
 	if !isValidContainer(dstv) {
-		return nil, fmt.Errorf("Invalid container of type %s. Container must be a modelable slice", dstv.Elem().Type().Name());
+		return nil, fmt.Errorf("invalid container of type %s. Container must be a modelable slice", dstv.Elem().Type().Name())
 	}
 
-	modelables := dstv.Elem();
+	modelables := dstv.Elem()
 
 	for {
 
-		Key, err := it.Next(nil);
+		Key, err := it.Next(nil)
 
-		if (err == datastore.Done) {
-			break;
+		if err == datastore.Done {
+			break
 		}
 
 		if err != nil {
-			query = nil;
-			return nil, err;
+			query = nil
+			return nil, err
 		}
 
-		more = true;
+		more = true
 		//log.Printf("RUNNING QUERY %v FOR MODEL " + data.entityName + " - FOUND ITEM WITH KEY: " + strconv.Itoa(int(Key.IntID())), data.query);
-		newModelable := reflect.New(query.mType);
-		m, ok := newModelable.Interface().(modelable);
+		newModelable := reflect.New(query.mType)
+		m, ok := newModelable.Interface().(modelable)
 
 		if !ok {
-			err = fmt.Errorf("Can't cast struct of type %s to modelable", query.mType.Name());
-			query = nil;
+			err = fmt.Errorf("can't cast struct of type %s to modelable", query.mType.Name())
+			query = nil
 			return nil, err
 		}
 
 		//todo Note: indexing here assigns the address of m to the Model.
 		//this means that if a user supplied a populated dst we must reindex its elements before returning
 		//or the model will point to a different modelable
-		index(m);
+		index(m)
 
 		model := m.getModel()
-		model.Key = Key;
+		model.Key = Key
 
-		err = Read(ctx, m);
+		err = Read(ctx, m)
 		if err != nil {
-			query = nil;
-			return nil, err;
+			query = nil
+			return nil, err
 		}
-		modelables.Set(reflect.Append(modelables, reflect.ValueOf(m)));
-		rc++;
+		modelables.Set(reflect.Append(modelables, reflect.ValueOf(m)))
+		rc++
 	}
 
 	if !more {
 		//if there are no more entries to be loaded, break the loop
-		return nil, datastore.Done;
+		return nil, datastore.Done
 	} else {
 		//else, if we still have entries, update cursor position
-		cursor, e := it.Cursor();
-		return &cursor, e;
+		cursor, e := it.Cursor()
+		return &cursor, e
 	}
 }
 
@@ -316,22 +315,22 @@ func (query *Query) get(ctx context.Context, dst interface{}) (*datastore.Cursor
 //container must be *[]modelable
 func isValidContainer(container reflect.Value) bool {
 	if container.Kind() != reflect.Ptr {
-		return false;
+		return false
 	}
-	celv := container.Elem();
+	celv := container.Elem()
 	if celv.Kind() != reflect.Slice {
-		return false;
+		return false
 	}
 
-	cel := celv.Type().Elem();
-	ok := cel.Implements(typeOfModelable);
+	cel := celv.Type().Elem()
+	ok := cel.Implements(typeOfModelable)
 	if !ok {
 	}
-	return ok;
+	return ok
 }
 
 func isTypeModelable(t reflect.Type) bool {
-	return t.Implements(typeOfModelable);
+	return t.Implements(typeOfModelable)
 }
 
 //retrieves up to datastore limits (currently 1000) entities from either memcache or datastore

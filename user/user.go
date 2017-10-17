@@ -6,7 +6,7 @@ import (
 	"fmt"
 )
 
-type UserType int64;
+type UserType int64
 
 //Default user for mage applications.
 type User struct {
@@ -18,44 +18,44 @@ type User struct {
 }
 
 func NewUser(ctx context.Context) *User {
-	return &User{};
+	return &User{}
 }
 
 //populate the user from a given key
 func (user *User) Authenticate(ctx context.Context, token string) error {
 	//recupero key da token in memcache
-	query := model.NewQuery(user);
-	query.WithField("Token =", token);
+	query := model.NewQuery(user)
+	query.WithField("Token =", token)
 
-	res := make([]*User, 0);
+	res := make([]*User, 0)
 
-	err := query.GetAll(ctx, &res);
+	err := query.GetAll(ctx, &res)
 
 	if err != nil {
-		user.Logout();
-		return err;
+		user.Logout()
+		return err
 	}
 
 	if len(res) > 1 {
-		user.Logout();
-		return fmt.Errorf("Found %d users for token %s. Invalid access", len(res), token);
+		user.Logout()
+		return fmt.Errorf("found %d users for token %s. Invalid access", len(res), token)
 	}
 
 	if len(res) < 1 {
-		user.Logout();
-		return fmt.Errorf("Found no users for token %s. Invalid access", token);
+		user.Logout()
+		return fmt.Errorf("found no users for token %s. Invalid access", token)
 	}
 
-	*user = *(res[0]);
-	user.Token = token;
-	return nil;
+	*user = *(res[0])
+	user.Token = token
+	return nil
 }
 
 
 func (user User) IsAuthenticated() bool {
-	return user.Token != "";
+	return user.Token != ""
 }
 
 func (user *User) Logout() {
-	user.Token = "";
+	user.Token = ""
 }

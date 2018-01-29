@@ -237,11 +237,6 @@ func (mage *mage) Run(w http.ResponseWriter, req *http.Request) {
 		ctx = authenticator.Authenticate(ctx, user);
 	}
 
-	//add headers and cookies
-	for _, v := range magePage.out.cookies {
-		http.SetCookie(w, v)
-	}
-
 	//handle the CORS framework
 	if mage.Config.CORS != nil {
 
@@ -281,6 +276,11 @@ func (mage *mage) Run(w http.ResponseWriter, req *http.Request) {
 	}
 
 	redirect := magePage.process(ctx);
+
+	//add headers and cookies
+	for _, v := range magePage.out.cookies {
+		http.SetCookie(w, v)
+	}
 
 	//add the redirect header if needed
 	for k, v := range magePage.out.headers {

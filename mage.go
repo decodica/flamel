@@ -277,6 +277,7 @@ func (mage *mage) Run(w http.ResponseWriter, req *http.Request) {
 
 func (mage *mage) destroy(ctx context.Context, controller Controller) {
 	controller.OnDestroy(ctx)
+	controller = nil
 	mage.app.AfterResponse(ctx)
 }
 

@@ -1,12 +1,14 @@
 package mage
 
 import (
+	"fmt"
 	"golang.org/x/net/context"
 	"google.golang.org/appengine"
 	"google.golang.org/appengine/aetest"
 	"google.golang.org/appengine/log"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"testing"
 )
 
@@ -37,6 +39,18 @@ func (controller *controllerTest) OnDestroy(ctx context.Context) {
 
 }
 
+func printRoutes(ctx context.Context, routes map[string]Route, parent string) {
+	for _, v := range routes {
+		var controller Controller = nil
+		if v.factory != nil {
+			controller = v.factory()
+		}
+		path := fmt.Sprintf("%s -> %s --- Controller: %s", parent, v.Name, reflect.TypeOf(controller))
+		log.Infof(ctx, "%s", path)
+		printRoutes(ctx, v.Children, path)
+	}
+}
+
 func TestMage_Run(t *testing.T) {
 
 	t.Log("*** TEST STARTED ***")
@@ -49,17 +63,11 @@ func TestMage_Run(t *testing.T) {
 	}
 	defer instance.Close()
 
-	req, err := instance.NewRequest(http.MethodGet, "/", nil)
-
-	if err != nil {
-		t.Fatalf("Error creating request %v", err)
-	}
-
-	recorder := httptest.NewRecorder()
-
+	//set up mage
+	//set up mage instance
 	m := Instance()
 	router := NewRouter()
-	router.SetRoute("/snasi", func() Controller { return &controllerTest{}})
+	router.SetRoute("/parent/child/snasi", func() Controller { return &controllerTest{}})
 
 	m.Config.Router = &router
 
@@ -67,9 +75,17 @@ func TestMage_Run(t *testing.T) {
 
 	m.LaunchApp(app)
 
+	req, err := instance.NewRequest(http.MethodGet, "/parent/child", nil)
+	if err != nil {
+		t.Fatalf("Error creating request %v", err)
+	}
+	recorder := httptest.NewRecorder()
+	ctx := appengine.NewContext(req)
+
+	printRoutes(ctx, router.routes, "root")
+
 	m.Run(recorder, req)
 
-	ctx := appengine.NewContext(req)
 	log.Infof(ctx, "Mage is %+v", m)
 
 	if recorder.Code >= http.StatusBadRequest {

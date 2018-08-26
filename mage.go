@@ -215,11 +215,6 @@ func (mage *mage) Run(w http.ResponseWriter, req *http.Request) {
 		ctx = authenticator.Authenticate(ctx)
 	}
 
-	//add headers and cookies
-	for _, v := range out.cookies {
-		http.SetCookie(w, v)
-	}
-
 	//handle the CORS framework
 	if mage.Config.CORS != nil {
 
@@ -260,7 +255,11 @@ func (mage *mage) Run(w http.ResponseWriter, req *http.Request) {
 
 	redirect := controller.Process(ctx, &out)
 
-	//add the redirect header if needed
+	//add headers and cookies
+	for _, v := range out.cookies {
+		http.SetCookie(w, v)
+	}
+
 	for k, v := range out.headers {
 		w.Header().Set(k, v)
 	}

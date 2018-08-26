@@ -18,10 +18,6 @@ func (app *appTest) OnStart(ctx context.Context) context.Context {
 	return ctx
 }
 
-func (app *appTest) ControllerForPath(ctx context.Context, path string) (error, Controller) {
-	return nil, &controllerTest{}
-}
-
 //called after each response has been finalized
 func (app *appTest) AfterResponse(ctx context.Context) {
 }
@@ -62,6 +58,11 @@ func TestMage_Run(t *testing.T) {
 	recorder := httptest.NewRecorder()
 
 	m := Instance()
+	router := NewRouter()
+	router.SetRoute("/snasi", func() Controller { return &controllerTest{}})
+
+	m.Config.Router = &router
+
 	app := &appTest{}
 
 	m.LaunchApp(app)

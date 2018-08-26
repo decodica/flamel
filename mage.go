@@ -17,7 +17,6 @@ import (
 )
 
 type mage struct {
-	//user factory
 	Config         Config
 	app            Application
 }
@@ -29,9 +28,9 @@ type Authenticator interface {
 type Application interface {
 	//called as soon as the request is received and the context is created
 	OnStart(ctx context.Context) context.Context
-	ControllerForPath(ctx context.Context, path string) (error, Controller)
 	//called after each response has been finalized
 	AfterResponse(ctx context.Context)
+	//todo: move authentication to router
 	AuthenticatorForPath(path string) Authenticator
 }
 
@@ -49,6 +48,7 @@ type Config struct {
 	//true if the server suport Cross Origin Request
 	CORS *cors.Cors
 	EnforceHostnameRedirect string
+	Router *Router
 }
 
 func DefaultConfig() Config {
@@ -186,7 +186,7 @@ func (mage *mage) Run(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	err, controller := mage.app.ControllerForPath(ctx, req.URL.Path)
+	err, controller := mage.Config.Router.controllerForPath(ctx, req.URL.Path)
 	defer mage.destroy(ctx, controller)
 
 	if err != nil {

@@ -16,11 +16,11 @@ type Cors struct {
 	ampFetch map[string]bool
 }
 
-const amp_allowed_origin_ampproject string = ".ampproject.org"
-const amp_allowed_origin_cloudflare string = ".amp.cloudflare.com"
+const ampAllowedOriginAmpproject string = ".ampproject.org"
+const ampAllowedOriginCloudflare string = ".amp.cloudflare.com"
 
-const AMP_SOURCE_ORIGIN_KEY string = "__amp_source_origin"
-const AMP_SAME_ORIGIN_HEADER_KEY string = "AMP-Same-Origin"
+const KeyAmpSourceOrigin string = "__amp_source_origin"
+const KeyAmpSameOriginHeader string = "AMP-Same-Origin"
 
 func NewCors(origins []string, methods []string, headers []string) *Cors {
 
@@ -65,8 +65,8 @@ func (c *Cors) HandleOptions(w http.ResponseWriter, origin string) bool {
 	* for reference: https://github.com/ampproject/amphtml/blob/master/spec/amp-cors-requests.md
 	*/
 	if c.amp && (
-		origin[len(origin) - len(amp_allowed_origin_ampproject):] == amp_allowed_origin_ampproject ||
-			origin[len(origin) - len(amp_allowed_origin_cloudflare):] == amp_allowed_origin_cloudflare) {
+		origin[len(origin) - len(ampAllowedOriginAmpproject):] == ampAllowedOriginAmpproject ||
+			origin[len(origin) - len(ampAllowedOriginCloudflare):] == ampAllowedOriginCloudflare) {
 
 		allowed = true
 		w.Header().Set("Access-Control-Allow-Origin", origin)

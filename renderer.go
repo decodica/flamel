@@ -1,12 +1,12 @@
 package mage
 
 import (
-	"net/http"
-	"html/template"
 	"encoding/json"
-	"io"
 	"google.golang.org/appengine"
 	"google.golang.org/appengine/blobstore"
+	"html/template"
+	"io"
+	"net/http"
 )
 
 type TemplateRenderer struct {

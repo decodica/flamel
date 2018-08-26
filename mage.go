@@ -1,40 +1,37 @@
 package mage
 
 import (
+	"distudio.com/mage/cors"
 	"errors"
-	"net/http"
-	"time"
+	"fmt"
 	"golang.org/x/net/context"
 	"google.golang.org/appengine"
 	"google.golang.org/appengine/blobstore"
 	"google.golang.org/appengine/file"
 	"google.golang.org/appengine/image"
 	"google.golang.org/appengine/memcache"
-	"distudio.com/mage/cors"
-	"strings"
 	"io/ioutil"
-	"fmt"
+	"net/http"
+	"strings"
+	"sync"
 )
 
 type mage struct {
 	//user factory
-	Config         MageConfig
+	Config         Config
 	app            Application
 }
 
 type Authenticator interface {
-	Authenticate(ctx context.Context, user Authenticable) context.Context
-}
-
-type Authenticable interface {
-	Authenticate(ctx context.Context, token string) error
+	Authenticate(ctx context.Context) context.Context
 }
 
 type Application interface {
-	NewUser(ctx context.Context) Authenticable
-	OnCreate(ctx context.Context) context.Context
-	CreateResponse(ctx context.Context, path string) (error, Response)
-	OnDestroy(ctx context.Context)
+	//called as soon as the request is received and the context is created
+	OnStart(ctx context.Context) context.Context
+	ControllerForPath(ctx context.Context, path string) (error, Controller)
+	//called after each response has been finalized
+	AfterResponse(ctx context.Context)
 	AuthenticatorForPath(path string) Authenticator
 }
 
@@ -45,11 +42,8 @@ func (mage *mage) LaunchApp(application Application) {
 	mage.app = application
 }
 
-type MageConfig struct {
+type Config struct {
 	UseMemcache            bool
-	TokenAuthenticationKey string
-	TokenExpirationKey     string
-	TokenExpiration        time.Duration
 	RequestUrlKey          string
 	MaxFileUploadSize      int64
 	//true if the server suport Cross Origin Request
@@ -57,38 +51,27 @@ type MageConfig struct {
 	EnforceHostnameRedirect string
 }
 
-func DefaultConfig() MageConfig {
-	config := MageConfig{}
-	//set default keys
-	config.TokenAuthenticationKey = token_auth_key
-	config.TokenExpirationKey = token_expiry_key
-	config.TokenExpiration = 60 * time.Minute
-	config.MaxFileUploadSize = DEFAULT_MAX_FILE_SIZE
+func DefaultConfig() Config {
+	config := Config{}
+	config.MaxFileUploadSize = SettingDefaultMaxFileSize
 
 	return config
 }
 
 const (
-	base_name        string = "base"
-	token_auth_key   string = "SSID"
-	token_expiry_key string = "SSID_EXP"
-
 	//request related special vars
-	REQUEST_USER = "mage-user"
-	REQUEST_INPUTS = "request-inputs"
-	REQUEST_METHOD = "method"
-	REQUEST_IPV4 = "remote-address"
-	REQUEST_JSON_DATA = "__json__"
+	KeyRequestInputs = "request-inputs"
+	KeyRequestMethod = "method"
+	KeyRequestIPV4 = "remote-address"
+	KeyRequestJSON = "__json__"
 
 	//default at 4 megs
-	DEFAULT_MAX_FILE_SIZE = (1 << 20) * 4
-
-	_error_parse_request string = "Error parsing request data: %v"
-	_error_create_page string = "Error creating page: %v"
+	SettingDefaultMaxFileSize = (1 << 20) * 4
 )
 
 //mage is a singleton
-var mageInstance *mage
+var instance *mage
+var once sync.Once
 
 var bucketName string
 
@@ -151,16 +134,14 @@ func ImageServingUrlString(c context.Context, fileName string) (string, error) {
 }
 
 //singleton instance
-func MageInstance() *mage {
+func Instance() *mage {
 
-	if mageInstance != nil {
-		return mageInstance
-	}
+	once.Do(func() {
+		config := DefaultConfig()
+		instance = &mage{Config: config}
+	})
 
-	config := DefaultConfig()
-
-	mageInstance = &mage{Config: config}
-	return mageInstance
+	return instance
 }
 
 func (mage *mage) Run(w http.ResponseWriter, req *http.Request) {
@@ -171,17 +152,17 @@ func (mage *mage) Run(w http.ResponseWriter, req *http.Request) {
 
 	ctx := appengine.NewContext(req)
 
-	ctx = mage.app.OnCreate(ctx)
+	ctx = mage.app.OnStart(ctx)
 
 	//if we enforce the hostname and the request hostname doesn't match, we redirect to the requested host
 	//host is in the form domainname.com
 	if mage.Config.EnforceHostnameRedirect != "" && mage.Config.EnforceHostnameRedirect != req.Host {
-		scheme := "http://"
+		scheme := "http"
 		if req.URL.Scheme == "https" {
-			scheme = "https://"
+			scheme = "https"
 		}
 
-		hst := fmt.Sprintf("%s%s%s", scheme, mage.Config.EnforceHostnameRedirect, req.URL.Path)
+		hst := fmt.Sprintf("%s://%s%s", scheme, mage.Config.EnforceHostnameRedirect, req.URL.Path)
 
 		if req.URL.RawQuery != "" {
 			hst = fmt.Sprintf("%s?%s", hst, req.URL.RawQuery)
@@ -190,12 +171,10 @@ func (mage *mage) Run(w http.ResponseWriter, req *http.Request) {
 		http.Redirect(w, req, hst, http.StatusMovedPermanently)
 		renderer := TextRenderer{}
 		renderer.Render(w)
-		return;
+		return
 	}
 
 	origin := req.Header.Get("Origin")
-
-
 	hasOrigin := origin != ""
 
 	//handle CORS requests
@@ -207,38 +186,37 @@ func (mage *mage) Run(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	err, response := mage.app.CreateResponse(ctx, req.URL.Path)
+	err, controller := mage.app.ControllerForPath(ctx, req.URL.Path)
+	defer mage.destroy(ctx, controller)
 
 	if err != nil {
 		renderer := TextRenderer{}
-		renderer.Data = fmt.Sprintf(_error_create_page, err)
+		renderer.Data = err.Error()
 		w.WriteHeader(http.StatusInternalServerError)
 		renderer.Render(w)
 		return
 	}
 
-	innerResponse := newInnerResponse(response)
-	defer mage.destroy(ctx, innerResponse)
+	out := newResponseOutput()
 
 	//add inputs to the context object
 	ctx, err = mage.parseRequestInputs(ctx, req)
 	if err != nil {
 		renderer := TextRenderer{}
-		renderer.Data = fmt.Sprintf(_error_parse_request, err)
+		renderer.Data = err.Error()
 		w.WriteHeader(http.StatusInternalServerError)
 		renderer.Render(w)
-		return;
+		return
 	}
 
 	authenticator := mage.app.AuthenticatorForPath(req.URL.Path)
 
 	if authenticator != nil {
-		user := mage.app.NewUser(ctx)
-		ctx = authenticator.Authenticate(ctx, user)
+		ctx = authenticator.Authenticate(ctx)
 	}
 
 	//add headers and cookies
-	for _, v := range innerResponse.out.cookies {
+	for _, v := range out.cookies {
 		http.SetCookie(w, v)
 	}
 
@@ -247,16 +225,16 @@ func (mage *mage) Run(w http.ResponseWriter, req *http.Request) {
 
 		//handle the AMP case
 		if mage.Config.CORS.AMPForUrl(req.URL.Path) {
-			AMPsource, hasSource := req.URL.Query()[cors.AMP_SOURCE_ORIGIN_KEY]
+			AMPsource, hasSource := req.URL.Query()[cors.KeyAmpSourceOrigin]
 
 			//if the source is not set the AMP request is invalid
 			if !hasSource || len(AMPsource) == 0 {
 				w.WriteHeader(http.StatusNotAcceptable)
-				return;
+				return
 			}
 
 			//if the source is set we check if the AMP-Same-Origin is set
-			hasSameOrigin := req.Header.Get(cors.AMP_SAME_ORIGIN_HEADER_KEY) == "true"
+			hasSameOrigin := req.Header.Get(cors.KeyAmpSameOriginHeader) == "true"
 
 			if !(hasOrigin || hasSameOrigin) {
 				w.WriteHeader(http.StatusNotAcceptable)
@@ -280,10 +258,10 @@ func (mage *mage) Run(w http.ResponseWriter, req *http.Request) {
 		}
 	}
 
-	redirect := innerResponse.process(ctx)
+	redirect := controller.Process(ctx, &out)
 
 	//add the redirect header if needed
-	for k, v := range innerResponse.out.headers {
+	for k, v := range out.headers {
 		w.Header().Set(k, v)
 	}
 
@@ -295,35 +273,33 @@ func (mage *mage) Run(w http.ResponseWriter, req *http.Request) {
 		w.WriteHeader(redirect.Status)
 	}
 
-	defer innerResponse.out.Renderer.Render(w)
+	defer out.Renderer.Render(w)
 }
 
-func (mage *mage) destroy(ctx context.Context, res *innerResponse) {
-	res.response.OnDestroy(ctx)
-	mage.app.OnDestroy(ctx)
+func (mage *mage) destroy(ctx context.Context, controller Controller) {
+	controller.OnDestroy(ctx)
+	mage.app.AfterResponse(ctx)
 }
 
 func (mage mage) parseRequestInputs(ctx context.Context, req *http.Request) (context.Context, error) {
 	reqValues := make(RequestInputs)
 
-	//todo: put in context
 	method := requestInput{}
 	m := make([]string, 1, 1)
 	m[0] = req.Method
 	method.values = m
-	reqValues[REQUEST_METHOD] = method
-
+	reqValues[KeyRequestMethod] = method
 
 	ipV := requestInput{}
 	ip := make([]string, 0)
 	ip = append(ip, req.RemoteAddr)
 	ipV.values = ip
-	reqValues[REQUEST_IPV4] = ipV
+	reqValues[KeyRequestIPV4] = ipV
 
 	//get request params
 	switch req.Method {
 	case http.MethodGet:
-		for k, _ := range req.URL.Query() {
+		for k := range req.URL.Query() {
 			s := make([]string, 1, 1)
 			v := req.URL.Query().Get(k)
 			s[0] = v
@@ -355,18 +331,18 @@ func (mage mage) parseRequestInputs(ctx context.Context, req *http.Request) (con
 			str, _ := ioutil.ReadAll(req.Body)
 			s[0] = string(str)
 			i.values = s
-			reqValues[REQUEST_JSON_DATA] = i
+			reqValues[KeyRequestJSON] = i
 			break
 		}
 
-		for k , _ := range req.Form {
+		for k := range req.Form {
 			v := req.Form[k]
 			i := requestInput{}
 			i.values = v
 			reqValues[k] = i
 		}
 	case http.MethodDelete:
-		for k, _ := range req.URL.Query() {
+		for k := range req.URL.Query() {
 			s := make([]string, 1, 1)
 			v := req.URL.Query().Get(k)
 			s[0] = v
@@ -379,7 +355,7 @@ func (mage mage) parseRequestInputs(ctx context.Context, req *http.Request) (con
 	}
 
 	//get the headers
-	for k, _ := range req.Header {
+	for k := range req.Header {
 		i := requestInput{}
 		s := make([]string, 1, 1)
 		s[0] = req.Header.Get(k)
@@ -397,5 +373,5 @@ func (mage mage) parseRequestInputs(ctx context.Context, req *http.Request) (con
 		reqValues[c.Name] = i
 	}
 
-	return context.WithValue(ctx, REQUEST_INPUTS, reqValues), nil
+	return context.WithValue(ctx, KeyRequestInputs, reqValues), nil
 }

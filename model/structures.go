@@ -1,17 +1,15 @@
 package model
 
-
 import (
-	"reflect"
-	"fmt"
-	"strings"
-	"google.golang.org/appengine/datastore"
-	"google.golang.org/appengine"
 	"errors"
-	"time"
+	"fmt"
+	"google.golang.org/appengine"
+	"google.golang.org/appengine/datastore"
+	"reflect"
+	"strings"
 	"sync"
+	"time"
 )
-
 
 //Define special reflect.Type
 var (
@@ -73,10 +71,10 @@ func mapStructureLocked(t reflect.Type, s *encodedStruct, parentName string) {
 			continue
 		}
 
-		tags := strings.Split(field.Tag.Get(tag_domain), ",")
+		tags := strings.Split(field.Tag.Get(tagDomain), ",")
 		tagName := tags[0]
 
-		if tagName == tag_skip {
+		if tagName == tagSkip {
 			continue
 		}
 
@@ -226,7 +224,7 @@ type propertyLoader struct {
 //parentEncodedField represents a field of interface{} s
 func decodeStruct(s reflect.Value, p datastore.Property, encodedField encodedField, l *propertyLoader) error {
 	interf := s
-	if (s.Kind() == reflect.Ptr) {
+	if s.Kind() == reflect.Ptr {
 		interf = s.Elem()
 	}
 	//todo::handle slice exception case where slice of slices
@@ -394,7 +392,7 @@ func entityPropName(entityName string, fieldName string) string {
 //takes a property field name and returns it's base
 func baseName(name string) string {
 	//get the last index of the separator
-	lastIndex := strings.LastIndex(name, val_serparator)
+	lastIndex := strings.LastIndex(name, valSeparator)
 	if lastIndex > 0 {
 		return name[0:lastIndex]
 	}
@@ -402,7 +400,7 @@ func baseName(name string) string {
 }
 
 func pureName(fullName string) string {
-	lastIndex := strings.LastIndex(fullName, val_serparator)
+	lastIndex := strings.LastIndex(fullName, valSeparator)
 	if lastIndex > 0 {
 		return fullName[lastIndex + 1:]
 	}
@@ -410,7 +408,7 @@ func pureName(fullName string) string {
 }
 
 func childName(fullName string) string {
-	firstIndex := strings.Index(fullName, val_serparator)
+	firstIndex := strings.Index(fullName, valSeparator)
 	if firstIndex > 0 {
 		return fullName[firstIndex + 1:]
 	}
@@ -444,14 +442,14 @@ func toPropertyList(modelable modelable) ([]datastore.Property, error) {
 			continue
 		}
 
-		if field.Tag.Get("model") == tag_skip {
+		if field.Tag.Get("model") == tagSkip {
 			continue
 		}
 
 		p := datastore.Property{}
 
 
-		if field.Tag.Get("model") == tag_noindex {
+		if field.Tag.Get("model") == tagNoindex {
 			p.NoIndex = true
 		}
 
@@ -539,7 +537,7 @@ func toPropertyList(modelable modelable) ([]datastore.Property, error) {
 
 							props = append(props, sp)
 						}
-						continue;
+						continue
 					}
 				}
 
@@ -558,7 +556,7 @@ func toPropertyList(modelable modelable) ([]datastore.Property, error) {
 					if err != nil {
 						panic(err)
 					}
-					continue;
+					continue
 				}
 				return nil, fmt.Errorf("FieldName % s not found in %v for Entity of type %s", p.Name, model.fieldNames, sType)
 			}

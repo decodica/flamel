@@ -47,7 +47,7 @@ type ResponseOutput struct {
 	Renderer    Renderer
 }
 
-func newRequestOutput() ResponseOutput {
+func newResponseOutput() ResponseOutput {
 	out := ResponseOutput{}
 	out.headers = make(map[string]string)
 	out.Renderer = &TextRenderer{Data:""}

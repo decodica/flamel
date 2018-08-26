@@ -1,25 +1,24 @@
 package model
 
 import (
+	"encoding/gob"
+	"errors"
+	"fmt"
+	"golang.org/x/net/context"
 	"google.golang.org/appengine/datastore"
 	gaelog "google.golang.org/appengine/log"
-	"reflect"
-	"golang.org/x/net/context"
-	"fmt"
-	"errors"
-	"strings"
-	"encoding/gob"
 	"google.golang.org/appengine/memcache"
+	"reflect"
+	"strings"
 )
 
-const val_serparator string = "."
-const tag_domain string = "model"
+const valSeparator string = "."
 
-
-const tag_skip string = "-"
-const tag_search string = "search"
-const tag_noindex string = "noindex"
-const tag_ancestor string = "ancestor"
+const tagDomain string = "model"
+const tagSkip string = "-"
+const tagSearch string = "search"
+const tagNoindex string = "noindex"
+const tagAncestor string = "ancestor"
 
 type modelable interface {
 	getModel() *Model
@@ -218,14 +217,14 @@ func index(m modelable) {
 				continue
 			}
 
-			tags := strings.Split(fType.Tag.Get(tag_domain), ",")
+			tags := strings.Split(fType.Tag.Get(tagDomain), ",")
 			tagName := tags[0]
 
-			if tagName == tag_skip {
+			if tagName == tagSkip {
 				continue
 			}
 
-			if tagName == tag_search {
+			if tagName == tagSearch {
 				//todo
 			}
 
@@ -237,14 +236,14 @@ func index(m modelable) {
 
 				if rm, ok := obj.Field(i).Addr().Interface().(modelable); ok {
 					//we register the modelable
-					isAnc := tagName == tag_ancestor
+					isAnc := tagName == tagAncestor
 
 					if isAnc {
 						//flag the index as the ancestor
 						//if already has an ancestor we throw an error
 						if hasAncestor {
 							err := fmt.Errorf("multiple ancestors set for model of type %s", mType.Name())
-							panic(err);
+							panic(err)
 						}
 						hasAncestor = true
 					}

@@ -22,7 +22,7 @@ const (
 const KeyRouteNotFound string = "__mage_not_found"
 var ErrRouteNotFound = errors.New("Can't find route")
 
-const paramRegex = `{(\w+)}`
+const paramRegex = `:(\w+)`
 const wildcardChar = "*"
 
 var paramTester = regexp.MustCompile(paramRegex)
@@ -68,8 +68,8 @@ func extractSpecialKey(url string) string {
 }
 
 func parts(url string) []string {
-	parents := url[:strings.LastIndex(url, "/")]
-	return strings.Split(parents, "/")
+	noroot := url[:strings.LastIndex(url, "/")]
+	return strings.Split(noroot, "/")
 }
 
 //Route class
@@ -81,17 +81,21 @@ type Route struct {
 }
 
 func (route Route) match(url string, rest string) bool {
-	log.Printf("url %s, rest %s, route.Name %s ", url, rest, route.Name)
+	//log.Printf("url %s, rest %s, route.Name %s ", url, rest, route.Name)
 	switch route.routeType {
 	case parameter:
+		log.Printf("Matching %s, with rest %s for type Parameter", url, rest)
 		return true
 	case static:
+		log.Printf("Matching %s, with rest %s for type Static and route.Name %s", url, rest, route.Name)
 		return route.Name == url
 	case wildcard:
 		//todo: test wildcard
+		log.Printf("Matching %s, with rest %s for type Wildcard and route.Name %s", url, rest, route.Name)
 		return route.Name == url
 	}
 
+	log.Printf("No match for url %s with rest %s.", url, rest)
 	return false
 }
 
@@ -99,16 +103,16 @@ func (route Route) match(url string, rest string) bool {
 type Router struct {
 	//Optional function to control routing with custom algorithms
 	ControllerForPath func(ctx context.Context, path string) (error, Controller)
-	routes map[string]Route
+	root Route
 }
 
 var notFoundFactory = func() Controller {return &NotFoundController{}}
 
 func NewRouter() Router {
-	routes := make(map[string]Route)
-	router := Router{routes:routes}
+	router := Router{}
 	//add default routes
-	router.SetRoute(KeyRouteNotFound, notFoundFactory)
+	root := newRoute("", notFoundFactory)
+	router.root = root
 	return router
 }
 
@@ -117,25 +121,21 @@ we add /parent/child/{param}
 we want the router to have one route "parent" and that route mush have a child route "child"
  */
 func (router *Router) SetRoute(path string, factory func() Controller) {
-	if path == KeyRouteNotFound {
-		router.routes[KeyRouteNotFound] = newRoute(KeyRouteNotFound, notFoundFactory)
-		return
-	}
 
-	routes := router.routes
+	route := router.root
 	parts := parts(path)
 
 	//add subroutes if not exist, and associate the Controller factory with the final segment
 	for _, v := range parts {
-		if _, ok := routes[v]; !ok {
-			//if we do not have the transitioning node we add it
-			routes[v] = newRoute(v, nil)
+		if _, ok := route.Children[v]; !ok {
+			//if we do not have the transitioning node we add it with a nil controller
+			route.Children[v] = newRoute(v, nil)
 		}
-		routes = routes[v].Children
+		route = route.Children[v]
 	}
 
 	endpoint := path[strings.LastIndex(path,"/") + 1:]
-	routes[endpoint] = newRoute(endpoint, factory)
+	route.Children[endpoint] = newRoute(endpoint, factory)
 }
 
 func (router Router) controllerForPath(ctx context.Context, path string) (error, Controller) {
@@ -144,10 +144,6 @@ func (router Router) controllerForPath(ctx context.Context, path string) (error,
 	}
 
 	err, route := router.searchRoute(path)
-	if err == ErrRouteNotFound {
-		r := router.routes[KeyRouteNotFound]
-		return nil, r.factory()
-	}
 
 	if err != nil {
 		return err, nil
@@ -157,24 +153,27 @@ func (router Router) controllerForPath(ctx context.Context, path string) (error,
 	return nil, controller
 }
 
+//Routes are being searched using a Greedy Search algorithm, based on the work at https://github.com/blackshadev/Roadie/blob/ts/src/routing/static/route_search.ts
 func (router Router) searchRoute(path string) (error, *Route) {
 	//split the url and create the nodes array
 	parts := strings.Split(path, "/")
-	nodes := make([]routingState, len(parts))
+	var nodes []routingState
 
 	//set state for the root route
-	initial := newRoutingState(router.routes[""])
+	initial := newRoutingState(router.root)
 	initial.left = parts
-	nodes[0] = initial
+	nodes = append(nodes, initial)
 
 	for len(nodes) > 0 {
-		//grab the first node and check if it's a goal state
-		state, nodes := nodes[0], nodes[1:]
+
+		state := nodes[0]
+		nodes = nodes[1:]
+
 		if len(state.left) == 0 {
+			log.Printf(">>> State.left == 0. Returning data: %+v", state.data)
 			return nil, &state.data
 		}
 
-		//get next url to check
 		next := state.left[0]
 		state.left = state.left[1:]
 
@@ -186,6 +185,7 @@ func (router Router) searchRoute(path string) (error, *Route) {
 
 		possibilities := state.getPossibleRoutes(next, rest)
 		states := make([]routingState, 0)
+		//update each possibility cost
 		for _, v := range possibilities {
 
 			ns := state.clone()
@@ -198,23 +198,20 @@ func (router Router) searchRoute(path string) (error, *Route) {
 				ns.params[v.Name] = next
 			case wildcard:
 				ns.uri = rest
-				if rest != "" {
+				if ns.uri != "" {
 					ns.penalty += len(ns.uri) - len(v.Name) - 1
 				}
 				ns.left = nil
 			}
 			states = append(states, ns)
 		}
+
 		nodes = append(nodes, states...)
 	}
 
-	if route, ok := router.routes[path]; ok {
-		return nil, &route
-	}
 	return ErrRouteNotFound, nil
 }
 
-//Routes are being searched using a Greedy Search algorithm, based on the work at https://github.com/blackshadev/Roadie/blob/ts/src/routing/static/route_search.ts
 type routingState struct {
 	penalty int
 	params map[string]interface{}
@@ -222,7 +219,7 @@ type routingState struct {
 	path []string
 	//paths left to analyze
 	left []string
-
+	//route associated with the given state
 	data Route
 
 	//collects wildcard leftovers (?)
@@ -244,8 +241,8 @@ func (state routingState) cost() int {
 
 func (state routingState) clone() routingState {
 	ns := routingState{}
-	ns.left = state.left[1:]
-	ns.path = state.path[1:]
+	ns.left = state.left
+	ns.path = state.path
 	ns.penalty = state.penalty
 	ns.uri = state.uri
 	ns.params = state.params

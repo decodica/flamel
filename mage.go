@@ -43,7 +43,6 @@ func (mage *mage) LaunchApp(application Application) {
 
 type Config struct {
 	UseMemcache            bool
-	RequestUrlKey          string
 	MaxFileUploadSize      int64
 	//true if the server suport Cross Origin Request
 	CORS *cors.Cors
@@ -187,7 +186,14 @@ func (mage *mage) Run(w http.ResponseWriter, req *http.Request) {
 	}
 
 	err, controller := mage.Config.Router.controllerForPath(ctx, req.URL.Path)
-	defer mage.destroy(ctx, controller)
+
+	if err == ErrRouteNotFound {
+		renderer := TextRenderer{}
+		renderer.Data = err.Error()
+		w.WriteHeader(http.StatusNotFound)
+		renderer.Render(w)
+		return
+	}
 
 	if err != nil {
 		renderer := TextRenderer{}
@@ -196,6 +202,8 @@ func (mage *mage) Run(w http.ResponseWriter, req *http.Request) {
 		renderer.Render(w)
 		return
 	}
+
+	defer mage.destroy(ctx, controller)
 
 	out := newResponseOutput()
 

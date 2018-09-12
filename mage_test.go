@@ -45,7 +45,7 @@ func printRoutes(ctx context.Context, routes map[string]Route, parent string) {
 		if v.factory != nil {
 			controller = v.factory()
 		}
-		path := fmt.Sprintf("%s -> %s --- Controller: %s", parent, v.Name, reflect.TypeOf(controller))
+		path := fmt.Sprintf("%s/%s -> Controller: %s", parent, v.Name, reflect.TypeOf(controller))
 		log.Infof(ctx, "%s", path)
 		printRoutes(ctx, v.Children, path)
 	}
@@ -67,7 +67,7 @@ func TestMage_Run(t *testing.T) {
 	//set up mage instance
 	m := Instance()
 	router := NewRouter()
-	router.SetRoute("/parent/child/snasi", func() Controller { return &controllerTest{}})
+	router.SetRoute("/parente/:child/snasi", func() Controller { return &controllerTest{}})
 
 	m.Config.Router = &router
 
@@ -75,14 +75,14 @@ func TestMage_Run(t *testing.T) {
 
 	m.LaunchApp(app)
 
-	req, err := instance.NewRequest(http.MethodGet, "/parent/child", nil)
+	req, err := instance.NewRequest(http.MethodGet, "/parent/1/snasi", nil)
 	if err != nil {
 		t.Fatalf("Error creating request %v", err)
 	}
 	recorder := httptest.NewRecorder()
 	ctx := appengine.NewContext(req)
 
-	printRoutes(ctx, router.routes, "root")
+	printRoutes(ctx, router.root.Children, "")
 
 	m.Run(recorder, req)
 

@@ -27,31 +27,31 @@ const wildcardChar = "*"
 
 var paramTester = regexp.MustCompile(paramRegex)
 
-func newRoute(urlPart string, factory func() Controller) Route {
-	children := make(map[string]Route)
+func newRoute(urlPart string, factory func() Controller) route {
+	children := make(map[string]route)
 	//analyze the name to determine the route type
-	route := Route{Children:children, factory:factory}
+	route := route{children:children, factory:factory}
 
 	//check special routes
 	if key := extractSpecialKey(urlPart);key != "" {
-		route.Name = key
+		route.name = key
 		route.routeType = special
 		return route
 	}
 
 	if par := extractParameter(urlPart);par != "" {
-		route.Name = par
+		route.name = par
 		route.routeType = parameter
 		return route
 	}
 
 	if strings.Index(urlPart, wildcardChar) != -1 {
-		route.Name = urlPart
+		route.name = urlPart
 		route.routeType = wildcard
 		return route
 	}
 
-	route.Name = urlPart
+	route.name = urlPart
 	route.routeType =static
 	return route
 }
@@ -73,26 +73,26 @@ func parts(url string) []string {
 }
 
 //Route class
-type Route struct {
-	Name string
-	Children map[string]Route
+type route struct {
+	name string
+	children map[string]route
 	factory func() Controller
 	routeType routeType
 }
 
-func (route Route) match(url string, rest string) bool {
+func (route route) match(url string, rest string) bool {
 	//log.Printf("url %s, rest %s, route.Name %s ", url, rest, route.Name)
 	switch route.routeType {
 	case parameter:
 		log.Printf("Matching %s, with rest %s for type Parameter", url, rest)
 		return true
 	case static:
-		log.Printf("Matching %s, with rest %s for type Static and route.Name %s", url, rest, route.Name)
-		return route.Name == url
+		log.Printf("Matching %s, with rest %s for type Static and route.Name %s", url, rest, route.name)
+		return route.name == url
 	case wildcard:
 		//todo: test wildcard
-		log.Printf("Matching %s, with rest %s for type Wildcard and route.Name %s", url, rest, route.Name)
-		return route.Name == url
+		log.Printf("Matching %s, with rest %s for type Wildcard and route.Name %s", url, rest, route.name)
+		return route.name == url
 	}
 
 	log.Printf("No match for url %s with rest %s.", url, rest)
@@ -103,7 +103,7 @@ func (route Route) match(url string, rest string) bool {
 type Router struct {
 	//Optional function to control routing with custom algorithms
 	ControllerForPath func(ctx context.Context, path string) (error, Controller)
-	root Route
+	root route
 }
 
 var notFoundFactory = func() Controller {return &NotFoundController{}}
@@ -127,15 +127,15 @@ func (router *Router) SetRoute(path string, factory func() Controller) {
 
 	//add subroutes if not exist, and associate the Controller factory with the final segment
 	for _, v := range parts {
-		if _, ok := route.Children[v]; !ok {
+		if _, ok := route.children[v]; !ok {
 			//if we do not have the transitioning node we add it with a nil controller
-			route.Children[v] = newRoute(v, nil)
+			route.children[v] = newRoute(v, nil)
 		}
-		route = route.Children[v]
+		route = route.children[v]
 	}
 
 	endpoint := path[strings.LastIndex(path,"/") + 1:]
-	route.Children[endpoint] = newRoute(endpoint, factory)
+	route.children[endpoint] = newRoute(endpoint, factory)
 }
 
 func (router Router) controllerForPath(ctx context.Context, path string) (error, Controller) {
@@ -154,7 +154,7 @@ func (router Router) controllerForPath(ctx context.Context, path string) (error,
 }
 
 //Routes are being searched using a Greedy Search algorithm, based on the work at https://github.com/blackshadev/Roadie/blob/ts/src/routing/static/route_search.ts
-func (router Router) searchRoute(path string) (error, *Route) {
+func (router Router) searchRoute(path string) (error, *route) {
 	//split the url and create the nodes array
 	parts := strings.Split(path, "/")
 	var nodes []routingState
@@ -190,16 +190,16 @@ func (router Router) searchRoute(path string) (error, *Route) {
 
 			ns := state.clone()
 			ns.data = v
-			ns.path = append(ns.path, v.Name)
+			ns.path = append(ns.path, v.name)
 
 			switch v.routeType {
 			case parameter:
 				ns.penalty += 1
-				ns.params[v.Name] = next
+				ns.params[v.name] = next
 			case wildcard:
 				ns.uri = rest
 				if ns.uri != "" {
-					ns.penalty += len(ns.uri) - len(v.Name) - 1
+					ns.penalty += len(ns.uri) - len(v.name) - 1
 				}
 				ns.left = nil
 			}
@@ -220,13 +220,13 @@ type routingState struct {
 	//paths left to analyze
 	left []string
 	//route associated with the given state
-	data Route
+	data route
 
 	//collects wildcard leftovers (?)
 	uri string
 }
 
-func newRoutingState(start Route) routingState {
+func newRoutingState(start route) routingState {
 	s := routingState{data: start}
 	s.params = make(map[string]interface{})
 	s.path = make([]string, 0)
@@ -250,9 +250,9 @@ func (state routingState) clone() routingState {
 	return ns
 }
 
-func (state routingState) getPossibleRoutes(urlPart string, rest string) []Route {
-	routes := make([]Route, 0)
-	for _, child := range state.data.Children {
+func (state routingState) getPossibleRoutes(urlPart string, rest string) []route {
+	routes := make([]route, 0)
+	for _, child := range state.data.children {
 		if child.match(urlPart, rest) {
 			routes = append(routes, child)
 		}

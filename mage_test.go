@@ -39,15 +39,15 @@ func (controller *controllerTest) OnDestroy(ctx context.Context) {
 
 }
 
-func printRoutes(ctx context.Context, routes map[string]Route, parent string) {
+func printRoutes(ctx context.Context, routes map[string]route, parent string) {
 	for _, v := range routes {
 		var controller Controller = nil
 		if v.factory != nil {
 			controller = v.factory()
 		}
-		path := fmt.Sprintf("%s/%s -> Controller: %s", parent, v.Name, reflect.TypeOf(controller))
+		path := fmt.Sprintf("%s/%s -> Controller: %s", parent, v.name, reflect.TypeOf(controller))
 		log.Infof(ctx, "%s", path)
-		printRoutes(ctx, v.Children, path)
+		printRoutes(ctx, v.children, path)
 	}
 }
 
@@ -82,7 +82,7 @@ func TestMage_Run(t *testing.T) {
 	recorder := httptest.NewRecorder()
 	ctx := appengine.NewContext(req)
 
-	printRoutes(ctx, router.root.Children, "")
+	printRoutes(ctx, router.root.children, "")
 
 	m.Run(recorder, req)
 

@@ -39,6 +39,17 @@ func (controller *controllerTest) OnDestroy(ctx context.Context) {
 
 }
 
+type specialController struct {
+	controllerTest
+}
+
+func (c *specialController) Process(ctx context.Context, out *ResponseOutput) Redirect {
+	renderer := TextRenderer{}
+	renderer.Data = "I AM SPECIAL!"
+	out.Renderer = &renderer
+	return Redirect{Status:http.StatusOK}
+}
+
 func printRoutes(ctx context.Context, routes map[string]route, parent string) {
 	for _, v := range routes {
 		var controller Controller = nil
@@ -67,7 +78,11 @@ func TestMage_Run(t *testing.T) {
 	//set up mage instance
 	m := Instance()
 	router := NewRouter()
-	router.SetRoute("/parente/:child/snasi", func() Controller { return &controllerTest{}})
+	router.SetRoute("/parent/snasi", func() Controller { return &controllerTest{}})
+	router.SetRoute("/parent/fnari", func() Controller { return &controllerTest{}})
+	router.SetRoute("/parent/:param", func() Controller { return &controllerTest{}})
+	router.SetRoute("/parent/*", func() Controller { return &controllerTest{}})
+	router.SetRoute("/parent/*/snasi", func() Controller { return &specialController{}})
 
 	m.Config.Router = &router
 
@@ -75,7 +90,7 @@ func TestMage_Run(t *testing.T) {
 
 	m.LaunchApp(app)
 
-	req, err := instance.NewRequest(http.MethodGet, "/parent/1/snasi", nil)
+	req, err := instance.NewRequest(http.MethodGet, "/parent/snasi", nil)
 	if err != nil {
 		t.Fatalf("Error creating request %v", err)
 	}
@@ -86,12 +101,10 @@ func TestMage_Run(t *testing.T) {
 
 	m.Run(recorder, req)
 
-	log.Infof(ctx, "Mage is %+v", m)
-
 	if recorder.Code >= http.StatusBadRequest {
-		t.Fatalf("Received status %d", recorder.Code)
+		t.Fatalf("Received status %d with body %s", recorder.Code, string(recorder.Body.Bytes()))
 	}
 
-	t.Logf("Recorder status %d", recorder.Code)
+	t.Logf("Recorder status %d. Body is %s", recorder.Code, string(recorder.Body.Bytes()))
 
 }

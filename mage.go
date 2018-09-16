@@ -11,6 +11,7 @@ import (
 	"google.golang.org/appengine/image"
 	"google.golang.org/appengine/memcache"
 	"io/ioutil"
+	"log"
 	"net/http"
 	"strings"
 	"sync"
@@ -185,7 +186,7 @@ func (mage *mage) Run(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	err, controller := mage.Config.Router.controllerForPath(ctx, req.URL.Path)
+	err, controller, params := mage.Config.Router.controllerForPath(ctx, req.URL.Path)
 
 	if err == ErrRouteNotFound {
 		renderer := TextRenderer{}
@@ -208,7 +209,7 @@ func (mage *mage) Run(w http.ResponseWriter, req *http.Request) {
 	out := newResponseOutput()
 
 	//add inputs to the context object
-	ctx, err = mage.parseRequestInputs(ctx, req)
+	ctx, err = mage.parseRequestInputs(ctx, req, params)
 	if err != nil {
 		renderer := TextRenderer{}
 		renderer.Data = err.Error()
@@ -289,7 +290,8 @@ func (mage *mage) destroy(ctx context.Context, controller Controller) {
 	mage.app.AfterResponse(ctx)
 }
 
-func (mage mage) parseRequestInputs(ctx context.Context, req *http.Request) (context.Context, error) {
+func (mage mage) parseRequestInputs(ctx context.Context, req *http.Request, params params) (context.Context, error) {
+	log.Printf("Params %+v", params)
 	reqValues := make(RequestInputs)
 
 	method := requestInput{}
@@ -379,6 +381,16 @@ func (mage mage) parseRequestInputs(ctx context.Context, req *http.Request) (con
 		s[0] = c.Value
 		i.values = s
 		reqValues[c.Name] = i
+	}
+
+	//add URL params
+	for _, v := range params {
+		i := requestInput{}
+		s := make([]string, 1, 1)
+		s[0] = v.value
+		i.values = s
+		reqValues[v.key] = i
+		log.Printf("%+v : Added param %s -> %s", params, v.key, reqValues[v.key])
 	}
 
 	return context.WithValue(ctx, KeyRequestInputs, reqValues), nil

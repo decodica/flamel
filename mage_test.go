@@ -1,14 +1,11 @@
 package mage
 
 import (
-	"fmt"
 	"golang.org/x/net/context"
-	"google.golang.org/appengine"
 	"google.golang.org/appengine/aetest"
-	"google.golang.org/appengine/log"
+	"log"
 	"net/http"
 	"net/http/httptest"
-	"reflect"
 	"testing"
 )
 
@@ -32,6 +29,10 @@ func (app *appTest) AuthenticatorForPath(path string) Authenticator {
 type controllerTest struct {}
 
 func (controller *controllerTest) Process(ctx context.Context, out *ResponseOutput) Redirect {
+	in := InputsFromContext(ctx)
+	for k, _ := range in {
+		log.Printf("key %s -> %s\n", k, in[k].Value())
+	}
 	return Redirect{Status:http.StatusOK}
 }
 
@@ -50,18 +51,6 @@ func (c *specialController) Process(ctx context.Context, out *ResponseOutput) Re
 	return Redirect{Status:http.StatusOK}
 }
 
-func printRoutes(ctx context.Context, routes map[string]route, parent string) {
-	for _, v := range routes {
-		var controller Controller = nil
-		if v.factory != nil {
-			controller = v.factory()
-		}
-		path := fmt.Sprintf("%s/%s -> Controller: %s", parent, v.name, reflect.TypeOf(controller))
-		log.Infof(ctx, "%s", path)
-		printRoutes(ctx, v.children, path)
-	}
-}
-
 func TestMage_Run(t *testing.T) {
 
 	t.Log("*** TEST STARTED ***")
@@ -78,11 +67,11 @@ func TestMage_Run(t *testing.T) {
 	//set up mage instance
 	m := Instance()
 	router := NewRouter()
-	router.SetRoute("/parent/snasi", func() Controller { return &controllerTest{}})
-	router.SetRoute("/parent/fnari", func() Controller { return &controllerTest{}})
-	router.SetRoute("/parent/:param", func() Controller { return &controllerTest{}})
-	router.SetRoute("/parent/*", func() Controller { return &controllerTest{}})
-	router.SetRoute("/parent/*/snasi", func() Controller { return &specialController{}})
+	router.SetRoute("/static", func() Controller { return &controllerTest{}})
+	router.SetRoute("/parent/*/wildcard", func() Controller { return &controllerTest{}})
+	router.SetRoute("/parent/:id", func() Controller { return &controllerTest{}})
+	router.SetRoute("/parent/:id/:children", func() Controller { return &controllerTest{}})
+	router.SetRoute("/parent", func() Controller { return &specialController{}})
 
 	m.Config.Router = &router
 
@@ -90,15 +79,11 @@ func TestMage_Run(t *testing.T) {
 
 	m.LaunchApp(app)
 
-	req, err := instance.NewRequest(http.MethodGet, "/parent/snasi", nil)
+	req, err := instance.NewRequest(http.MethodGet, "/parent/1/2", nil)
 	if err != nil {
 		t.Fatalf("Error creating request %v", err)
 	}
 	recorder := httptest.NewRecorder()
-	ctx := appengine.NewContext(req)
-
-	printRoutes(ctx, router.root.children, "")
-
 	m.Run(recorder, req)
 
 	if recorder.Code >= http.StatusBadRequest {

@@ -15,11 +15,8 @@ const (
 	static = iota
 	parameter
 	wildcard
-	special
 )
 
-//Key to identify the not found route. Used to set the custom notfound controller
-const KeyRouteNotFound string = "__mage_not_found"
 var ErrRouteNotFound = errors.New("Can't find route")
 
 const paramRegex = `:(\w+)`
@@ -28,16 +25,8 @@ const wildcardChar = '*'
 var paramTester = regexp.MustCompile(paramRegex)
 
 func newRoute(urlPart string, factory func() Controller) route {
-	children := make(map[string]route)
 	//analyze the name to determine the route type
-	route := route{children:children, factory:factory}
-
-	//check special routes
-	if key := extractSpecialKey(urlPart);key != "" {
-		route.name = key
-		route.routeType = special
-		return route
-	}
+	route := route{factory:factory}
 
 	if par := extractParameter(urlPart); par != "" {
 		route.name = urlPart
@@ -57,25 +46,30 @@ func newRoute(urlPart string, factory func() Controller) route {
 }
 
 func extractParameter(par string) string {
-	return paramTester.FindString(par)
-}
-
-func extractSpecialKey(url string) string {
-	if url == KeyRouteNotFound {
-		return KeyRouteNotFound
+	if !paramTester.MatchString(par) {
+		return ""
 	}
-	return ""
+	return paramTester.FindStringSubmatch(par)[1]
 }
 
-func parts(url string) []string {
-	noroot := url[:strings.LastIndex(url, "/")]
-	return strings.Split(noroot, "/")
+type param struct {
+	key string
+	value string
+}
+
+type params []param
+
+func (p *params) add(key string, value string) {
+	param := param{
+		key: key,
+		value: value,
+	}
+	*p = append(*p, param)
 }
 
 //Route class
 type route struct {
 	name string
-	children map[string]route
 	factory func() Controller
 	routeType routeType
 }
@@ -91,184 +85,45 @@ func (route route) match(url string) bool {
 		return true
 	}
 
-
 	return false
 }
 
 //Router class
 type Router struct {
 	//Optional function to control routing with custom algorithms
-	ControllerForPath func(ctx context.Context, path string) (error, Controller)
-	root route
+	ControllerForPath func(ctx context.Context, path string) (error, Controller, params)
 	tree *tree
 }
 
-var notFoundFactory = func() Controller {return &NotFoundController{}}
-
 func NewRouter() Router {
 	router := Router{}
-	//add default routes
-
-	root := newRoute("", notFoundFactory)
-	router.root = root
-
 	router.tree = newTree()
 	return router
 }
-
-/*
-we add /parent/child/{param}
-we want the router to have one route "parent" and that route mush have a child route "child"
- */
-/* func (router *Router) SetRoute(path string, factory func() Controller) {
-
-	route := router.root
-	parts := parts(path)
-
-	//add subroutes if not exist, and associate the Controller factory with the final segment
-	for _, v := range parts {
-		if _, ok := route.children[v]; !ok {
-			//if we do not have the transitioning node we add it with a nil controller
-			route.children[v] = newRoute(v, nil)
-		}
-		route = route.children[v]
-	}
-
-	endpoint := path[strings.LastIndex(path,"/") + 1:]
-	route.children[endpoint] = newRoute(endpoint, factory)
-}*/
 
 func (router *Router) SetRoute(path string, factory func() Controller) {
 	route := newRoute(path, factory)
 	router.tree.insert(&route)
 }
 
-func (router Router) controllerForPath(ctx context.Context, path string) (error, Controller) {
+func (router Router) controllerForPath(ctx context.Context, path string) (error, Controller, params) {
 	if router.ControllerForPath != nil {
 		return router.ControllerForPath(ctx, path)
 	}
 
-	route := router.tree.getRoute(path)
+	route, params := router.tree.getRoute(path)
 
 	if route == nil {
-		return errors.New("Route not found"), nil
+		return ErrRouteNotFound, nil, nil
 	}
 
 	controller := route.factory()
-	return nil, controller
+	return nil, controller, params
 }
-
-//Routes are being searched using a Greedy Search algorithm, based on the work at https://github.com/blackshadev/Roadie/blob/ts/src/routing/static/route_search.ts
-/*func (router Router) searchRoute(path string) (error, *route) {
-	//split the url and create the nodes array
-	parts := strings.Split(path, "/")
-	var nodes []routingState
-
-	//set state for the root route
-	initial := newRoutingState(router.root)
-	initial.left = parts
-	nodes = append(nodes, initial)
-
-	for len(nodes) > 0 {
-
-		state := nodes[0]
-		nodes = nodes[1:]
-
-		if len(state.left) == 0 {
-			log.Printf(">>> State.left == 0. Returning data: %+v", state.data)
-			return nil, &state.data
-		}
-
-		next := state.left[0]
-		state.left = state.left[1:]
-
-		rest := next
-		//if we are
-		if len(state.left) > 0 {
-			rest = fmt.Sprintf("%s/%s", next, strings.Join(state.left, "/"))
-		}
-
-		possibilities := state.getPossibleRoutes(next, rest)
-		states := make([]routingState, 0)
-		//update each possibility cost
-		for _, v := range possibilities {
-
-			ns := state.clone()
-			ns.data = v
-			ns.path = append(ns.path, v.name)
-
-			switch v.routeType {
-			case parameter:
-				ns.penalty += 1
-				ns.params[v.name] = next
-			case wildcard:
-				ns.uri = rest
-				if ns.uri != "" {
-					ns.penalty += len(ns.uri) - len(v.name) - 1
-				}
-				ns.left = nil
-			}
-			states = append(states, ns)
-		}
-
-		nodes = append(nodes, states...)
-	}
-
-	return ErrRouteNotFound, nil
-}*/
-
-type routingState struct {
-	penalty int
-	params map[string]interface{}
-	//path leading to this state
-	path []string
-	//paths left to analyze
-	left []string
-	//route associated with the given state
-	data route
-
-	//collects wildcard leftovers (?)
-	uri string
-}
-
-func newRoutingState(start route) routingState {
-	s := routingState{data: start}
-	s.params = make(map[string]interface{})
-	s.path = make([]string, 0)
-	s.left = make([]string, 0)
-	return s
-}
-
-//the greedy search cost function
-func (state routingState) cost() int {
-	return len(state.path) + state.penalty
-}
-
-func (state routingState) clone() routingState {
-	ns := routingState{}
-	ns.left = state.left
-	ns.path = state.path
-	ns.penalty = state.penalty
-	ns.uri = state.uri
-	ns.params = state.params
-	ns.data = state.data
-	return ns
-}
-
-/*func (state routingState) getPossibleRoutes(urlPart string, rest string) []route {
-	routes := make([]route, 0)
-	for _, child := range state.data.children {
-		if child.match(urlPart, rest) {
-			routes = append(routes, child)
-		}
-	}
-	return routes
-}*/
 
 // Router uses a specialized radix tree implementation to handle matching.
 // heavily inspired by @https://github.com/armon/go-radix/blob/master/radix.go
 // a route is our leaf node, where route name is the key.
-
 type edge struct {
 	label byte
 	node *node
@@ -286,8 +141,8 @@ func (e edges) Less(i, j int) bool {
 		return true
 	}
 
-	if e[i].label == '*' && e[j].label != ':' {
-		return true
+	if e[i].label == '*' {
+		return e[j].label != ':'
 	}
 
 	return e[i].label < e[j].label
@@ -326,7 +181,6 @@ func (n *node) updateEdge(label byte, node *node) {
 		return n.edges[i].label >= label
 	})
 
-	// todo: remove control after debugging
 	if idx < count && n.edges[idx].label == label {
 		n.edges[idx].node = node
 		return
@@ -350,28 +204,32 @@ func (n *node) getEdge(label byte) *node {
 
 // retrieves the edge looking for params if a static match is not found
 func (n *node) getParametricEdge(label byte) *node {
-	res := n.getEdge(label)
-	if res == nil {
-		if l := len(n.edges); l > 0 {
-			if n.edges[0].label == ':' {
-				log.Printf("Param at node %+v", n.edges[0].node)
-				return n.edges[0].node
-			}
+	log.Printf("Reading node %s", n.prefix)
+	for i, v := range n.edges {
+		log.Printf("edge.label[%d] %s -> node %s", i, string(v.label), v.node.prefix)
+	}
 
-			if n.edges[0].label == wildcardChar {
-				log.Printf("Wildcard at node %+v", n.edges[0].node)
-				return n.edges[0].node
-			}
-		}
-
-		log.Printf("can't find node for label %s.", string(label))
-		// we couldn't find a node. Check if
-		for _, v := range n.edges {
-			log.Printf("edge.label %s -> node %s", string(v.label), v.node.prefix)
+	l := len(n.edges)
+	if l > 0 {
+		if n.edges[0].label == ':' {
+			log.Printf("Param at node %+v", n.edges[0].node)
+			return n.edges[0].node
 		}
 	}
 
-	return res
+	res := n.getEdge(label)
+	if res != nil {
+		return res
+	}
+
+	if l > 0 {
+		if n.edges[0].label == wildcardChar {
+			log.Printf("Wildcard at node %+v", n.edges[0].node)
+			return n.edges[0].node
+		}
+	}
+
+	return nil
 }
 
 func (n *node) delEdge(label byte) {
@@ -395,18 +253,16 @@ func newTree() *tree {
 	return &tree{root: &node{}}
 }
 
-func longestPrefix(s1 string, s2 string) int {
-	min := len(s1)
-	if l := len(s2); l < min {
-		min = l
+func longestPrefix(k1, k2 string) int {
+	max := len(k1)
+	if l := len(k2); l < max {
+		max = l
 	}
-
-	i := 0
-	for i < min {
-		if s1[i] != s2[i] {
+	var i int
+	for i = 0; i < max; i++ {
+		if k1[i] != k2[i] {
 			break
 		}
-		i++
 	}
 	return i
 }
@@ -430,16 +286,18 @@ func (t *tree) insert(route *route) (updated bool) {
 				t.size++
 			}
 
+			log.Printf("1 | Added node %+v with prefix %v", n, search)
 			return isLeaf
 		}
 
 		// look for the edge
 		parent = n
 		n = n.getEdge(search[0])
-
+		log.Printf("Processing node %+v with parent %s", n, parent.prefix)
 		// there is no edge from the parent to the new node.
 		// we create a new edge and a new node, using the search as prefix
 		// and we connect it to the new node (parent)-----(new-node)
+		// or we have an empty tree
 		if n == nil {
 			e := edge{
 				label: search[0],
@@ -450,12 +308,13 @@ func (t *tree) insert(route *route) (updated bool) {
 			}
 			parent.addEdge(e)
 			t.size++
-			log.Printf("Added node %+v with prefix %v", e.node, search)
+			log.Printf("2 | Added node %+v with prefix %v", e.node, search)
 			return false
 		}
 
 		// we found an edge to attach the new node
 		common := longestPrefix(search, n.prefix)
+		log.Printf("checking common prefix. Search %s, prefix %s. Common is %d", search, n.prefix, common)
 
 		// if the prefixes coincide in len
 		// we empty the search and continue the loop
@@ -492,69 +351,81 @@ func (t *tree) insert(route *route) (updated bool) {
 		}
 
 		// else we create a new edge and we append it
-		child.addEdge(edge{
+
+		e := edge{
 			label: search[0],
 			node: &node{
 				route: route,
 				prefix: search,
 			},
-		})
+		}
+		child.addEdge(e)
+		log.Printf("3 | Added node %+v with prefix %v", e.node, search)
 
 		return false
 	}
 }
 
-func (t *tree) getRoute(s string) *route {
+func (t *tree) getRoute(s string) (*route, params) {
 	n := t.root
 	search := s
-	log.Printf("Root has edges: %+v", n.edges)
-	for _, v := range n.edges {
-		log.Printf("Edge %d has node: %+v with prefix %s", v.label, v.node, v.node.prefix)
-	}
+
+	// maps all params gathered along the path
+	var params params
 
 	for {
 
 		// we traversed all the trie
 		// return the route at the node
 		if len(search) == 0 {
-			log.Printf("Search len is 0. Returning route %+v", n.route)
-			return n.route
+			return n.route, params
 		}
 
 		n = n.getParametricEdge(search[0])
-		log.Printf("Node %+v", n)
+		// no edge found, route does not exist
 		if n == nil {
-			log.Print("Node == nil")
-			return nil
+			log.Printf("No edge found for %s", string(search[0]))
+			return nil, nil
 		}
 
 		if !strings.HasPrefix(search, n.prefix) {
 			log.Printf("HasPrefix is false: search: %s, prefix: %s", search, n.prefix)
 
 			// handle special patterns
-			if n.route.match(n.prefix) {
+			if n.route != nil && n.route.match(n.prefix) {
 				idx := strings.Index(search, "/")
-				//todo: parse params
-				// the wildcard character was at a leaf
+				// the param or the wildcard character was at a leaf
 				// we are done with searching
+
 				if idx == - 1 {
+					if n.route.routeType == parameter {
+						pn := extractParameter(n.prefix)
+						log.Printf("Parameter route. Extracting param %s with value %s", pn, search)
+						params.add(pn, search)
+					}
 					search = ""
 				} else {
+					// we are not at a leaf, redirect search to next node
+					if n.route.routeType == parameter {
+						pn := extractParameter(n.prefix)
+						log.Printf("Parameter route. Extracting param %s with value %s", pn, search[:idx])
+						params.add(pn, search[:idx])
+					}
 					search = search[idx:]
+					log.Printf("Will search %s", search)
 				}
-
 				continue
 			}
-
 			break
 		}
 
 		search = search[len(n.prefix):]
-		log.Printf("Search is %s", search)
 	}
 
-	return nil
+	return nil, nil
 }
+
+
 
 
 

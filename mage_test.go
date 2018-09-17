@@ -73,6 +73,14 @@ func TestMage_Run(t *testing.T) {
 	router.SetRoute("/parent/:id/:children", func() Controller { return &controllerTest{}})
 	router.SetRoute("/parent", func() Controller { return &specialController{}})
 
+	log.Printf("----- TREE WALKING START -----\n")
+	recursiveWalk(router.tree.root, "/parent/:id/:children")
+	log.Printf("----- TREE WALKING END -----\n")
+
+	log.Printf("----- TREE WALKING START -----\n")
+	recursiveWalk(router.tree.root, "/parent/:id")
+	log.Printf("----- TREE WALKING END -----\n")
+
 	m.Config.Router = &router
 
 	app := &appTest{}

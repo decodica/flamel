@@ -137,14 +137,6 @@ func (e edges) Len() int {
 
 // edges implements sortable interface
 func (e edges) Less(i, j int) bool {
-	if e[i].label == ':' {
-		return true
-	}
-
-	if e[i].label == '*' {
-		return e[j].label != ':'
-	}
-
 	return e[i].label < e[j].label
 }
 
@@ -209,12 +201,15 @@ func (n *node) getParametricEdge(label byte) *node {
 		log.Printf("edge.label[%d] %s -> node %s", i, string(v.label), v.node.prefix)
 	}
 
-	l := len(n.edges)
-	if l > 0 {
-		if n.edges[0].label == ':' {
+	count := len(n.edges)
+		/*if n.edges[0].label == ':' {
 			log.Printf("Param at node %+v", n.edges[0].node)
 			return n.edges[0].node
-		}
+		}*/
+	idx := sort.Search(count, func(i int) bool {
+		return n.edges[i].label == ':'
+	}); if idx != count {
+		return n.edges[idx].node
 	}
 
 	res := n.getEdge(label)
@@ -222,11 +217,10 @@ func (n *node) getParametricEdge(label byte) *node {
 		return res
 	}
 
-	if l > 0 {
-		if n.edges[0].label == wildcardChar {
-			log.Printf("Wildcard at node %+v", n.edges[0].node)
-			return n.edges[0].node
-		}
+	idx = sort.Search(count, func(i int) bool {
+		return n.edges[i].label == wildcardChar
+	}); if idx != count {
+		return n.edges[idx].node
 	}
 
 	return nil
@@ -264,6 +258,7 @@ func longestPrefix(k1, k2 string) int {
 			break
 		}
 	}
+	log.Printf("Confronting %s and %s. Common slice at %d: %s", k1, k2, i, k1[:i])
 	return i
 }
 
@@ -286,19 +281,18 @@ func (t *tree) insert(route *route) (updated bool) {
 				t.size++
 			}
 
-			log.Printf("1 | Added node %+v with prefix %v", n, search)
 			return isLeaf
 		}
 
 		// look for the edge
 		parent = n
 		n = n.getEdge(search[0])
-		log.Printf("Processing node %+v with parent %s", n, parent.prefix)
 		// there is no edge from the parent to the new node.
 		// we create a new edge and a new node, using the search as prefix
 		// and we connect it to the new node (parent)-----(new-node)
 		// or we have an empty tree
 		if n == nil {
+			log.Printf("Adding node for search %s under parent %s", search, parent.prefix)
 			e := edge{
 				label: search[0],
 				node: &node {
@@ -308,19 +302,20 @@ func (t *tree) insert(route *route) (updated bool) {
 			}
 			parent.addEdge(e)
 			t.size++
-			log.Printf("2 | Added node %+v with prefix %v", e.node, search)
 			return false
 		}
 
 		// we found an edge to attach the new node
+		// common is the idx of the divergent char
+		// i.e. "aab" and "aac" then common has value 2
 		common := longestPrefix(search, n.prefix)
-		log.Printf("checking common prefix. Search %s, prefix %s. Common is %d", search, n.prefix, common)
 
 		// if the prefixes coincide in len
 		// we empty the search and continue the loop
 		// thus adding a node as a leaf or replacing an existing node
 		if common == len(n.prefix) {
 			search = search[common:]
+			log.Printf("Searching where to place %s", search)
 			continue
 		}
 
@@ -360,10 +355,32 @@ func (t *tree) insert(route *route) (updated bool) {
 			},
 		}
 		child.addEdge(e)
-		log.Printf("3 | Added node %+v with prefix %v", e.node, search)
 
 		return false
 	}
+}
+
+// recursiveWalk is used to do a pre-order walk of a node
+// recursively. Returns true if the walk should be aborted
+
+func recursiveWalk(n *node, path string) bool {
+	if n.route != nil && n.route.name == path {
+		name := ""
+		r := n.route != nil; if r {
+			name = n.route.name
+		}
+		log.Printf("walking node with prefix %s. It holds route %s", n.prefix, name)
+		return true
+	}
+
+	for _, e := range n.edges {
+		log.Printf("Walking through edge labeled '%s'", string(e.label))
+		if recursiveWalk(e.node, path) {
+			return true
+		}
+	}
+
+	return false
 }
 
 func (t *tree) getRoute(s string) (*route, params) {
@@ -397,7 +414,8 @@ func (t *tree) getRoute(s string) (*route, params) {
 				// the param or the wildcard character was at a leaf
 				// we are done with searching
 
-				if idx == - 1 {
+				//todo: manage the slash character on the parent node
+				if idx == -1 {
 					if n.route.routeType == parameter {
 						pn := extractParameter(n.prefix)
 						log.Printf("Parameter route. Extracting param %s with value %s", pn, search)

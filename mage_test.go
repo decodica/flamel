@@ -72,6 +72,7 @@ func TestMage_Run(t *testing.T) {
 	router.SetRoute("/parent/:id", func() Controller { return &controllerTest{}})
 	router.SetRoute("/parent/:id/:children", func() Controller { return &controllerTest{}})
 	router.SetRoute("/parent", func() Controller { return &specialController{}})
+	router.SetRoute("/*", func() Controller { return &specialController{}})
 
 	log.Printf("----- TREE WALKING START -----\n")
 	recursiveWalk(router.tree.root, "/parent/:id/:children")
@@ -87,7 +88,7 @@ func TestMage_Run(t *testing.T) {
 
 	m.LaunchApp(app)
 
-	req, err := instance.NewRequest(http.MethodGet, "/parent/1/2", nil)
+	req, err := instance.NewRequest(http.MethodGet, "/fnado", nil)
 	if err != nil {
 		t.Fatalf("Error creating request %v", err)
 	}

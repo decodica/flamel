@@ -1,8 +1,8 @@
 package mage
 
 import (
+	"context"
 	"github.com/pkg/errors"
-	"golang.org/x/net/context"
 	"log"
 	"regexp"
 	"sort"
@@ -22,7 +22,10 @@ var ErrRouteNotFound = errors.New("Can't find route")
 const paramRegex = `:(\w+)`
 const wildcardChar = '*'
 
+const segmentRegex = `^/?(\w+)`
+
 var paramTester = regexp.MustCompile(paramRegex)
+var segmentTester = regexp.MustCompile(segmentRegex)
 
 func newRoute(urlPart string, factory func() Controller) route {
 	//analyze the name to determine the route type
@@ -50,6 +53,10 @@ func extractParameter(par string) string {
 		return ""
 	}
 	return paramTester.FindStringSubmatch(par)[1]
+}
+
+func paramMatch(par string) string {
+	return paramTester.FindString(par)
 }
 
 type param struct {
@@ -214,12 +221,15 @@ func (n *node) getParametricEdge(label byte) *node {
 
 	res := n.getEdge(label)
 	if res != nil {
+		log.Printf("NOT WILDCARD. RES IS %s", res.prefix)
 		return res
 	}
 
 	idx = sort.Search(count, func(i int) bool {
+		log.Printf("label %s", string(n.edges[i].label))
 		return n.edges[i].label == wildcardChar
 	}); if idx != count {
+		log.Printf("WILDCARD!")
 		return n.edges[idx].node
 	}
 
@@ -398,40 +408,51 @@ func (t *tree) getRoute(s string) (*route, params) {
 			return n.route, params
 		}
 
-		n = n.getParametricEdge(search[0])
+		edge := search[0]
+		n = n.getParametricEdge(edge)
 		// no edge found, route does not exist
 		if n == nil {
-			log.Printf("No edge found for %s", string(search[0]))
+			log.Printf("No node found at edge %s", string(edge))
 			return nil, nil
 		}
 
 		if !strings.HasPrefix(search, n.prefix) {
 			log.Printf("HasPrefix is false: search: %s, prefix: %s", search, n.prefix)
 
-			// handle special patterns
+			// if we have a sibling at the edge the nodes share a "/" slashes
+			// and the node prefix begins without a slash
+			// else the node has no sibling thus the node prefix begins with a slash
+			// thus edge == '/' means that the node has at least one sibling (branch)
+
+			// when reading params or regex/wildcards we must determine if the node has children
+			// if it does, the algorithm must keep walking the path
+			// else we reached a leaf and we can return
+			// we must account for ending slashes, such as "parent/child/grandchild/
+			// in this case grandchild is a legitimate leaf.
+			// Thus a leaf can end with a backslash
+
 			if n.route != nil && n.route.match(n.prefix) {
-				idx := strings.Index(search, "/")
+				// check if the search string has further children.
+				// if it does, we keep searching.
+				// else we reached a leaf
+				matches := segmentTester.FindStringSubmatch(search)
+				segment := matches[0]
+				param := matches[1]
+				log.Printf("Matches: %+v", matches)
+				if n.route.routeType == parameter {
+					pname := extractParameter(n.prefix)
+					params.add(pname, param)
+					log.Printf("Added param %s -> %s", pname, param)
+				}
+
+				search = search[len(segment):]
+				if search == "/" {
+					search = ""
+				}
 				// the param or the wildcard character was at a leaf
 				// we are done with searching
 
-				//todo: manage the slash character on the parent node
-				if idx == -1 {
-					if n.route.routeType == parameter {
-						pn := extractParameter(n.prefix)
-						log.Printf("Parameter route. Extracting param %s with value %s", pn, search)
-						params.add(pn, search)
-					}
-					search = ""
-				} else {
-					// we are not at a leaf, redirect search to next node
-					if n.route.routeType == parameter {
-						pn := extractParameter(n.prefix)
-						log.Printf("Parameter route. Extracting param %s with value %s", pn, search[:idx])
-						params.add(pn, search[:idx])
-					}
-					search = search[idx:]
-					log.Printf("Will search %s", search)
-				}
+				log.Printf("Will search %s", search)
 				continue
 			}
 			break

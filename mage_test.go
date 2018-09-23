@@ -26,29 +26,23 @@ func (app *appTest) AuthenticatorForPath(path string) Authenticator {
 }
 
 //controller
-type controllerTest struct {}
+type controllerTest struct {
+	name string
+}
 
 func (controller *controllerTest) Process(ctx context.Context, out *ResponseOutput) Redirect {
 	in := InputsFromContext(ctx)
 	for k, _ := range in {
 		log.Printf("key %s -> %s\n", k, in[k].Value())
 	}
+	renderer := TextRenderer{}
+	renderer.Data = controller.name
+	out.Renderer = &renderer
 	return Redirect{Status:http.StatusOK}
 }
 
 func (controller *controllerTest) OnDestroy(ctx context.Context) {
 
-}
-
-type specialController struct {
-	controllerTest
-}
-
-func (c *specialController) Process(ctx context.Context, out *ResponseOutput) Redirect {
-	renderer := TextRenderer{}
-	renderer.Data = "I AM SPECIAL!"
-	out.Renderer = &renderer
-	return Redirect{Status:http.StatusOK}
 }
 
 func TestMage_Run(t *testing.T) {
@@ -67,19 +61,18 @@ func TestMage_Run(t *testing.T) {
 	//set up mage instance
 	m := Instance()
 	router := NewRouter()
-	router.SetRoute("/static", func() Controller { return &controllerTest{}})
-	router.SetRoute("/parent/*/wildcard", func() Controller { return &controllerTest{}})
-	router.SetRoute("/parent/:id", func() Controller { return &controllerTest{}})
-	router.SetRoute("/parent/:id/:children", func() Controller { return &controllerTest{}})
-	router.SetRoute("/parent", func() Controller { return &specialController{}})
-	router.SetRoute("/*", func() Controller { return &specialController{}})
+	router.SetRoute("/static", func() Controller { return &controllerTest{name:"/static"}})
+//	router.SetRoute("/sta", func() Controller { return &controllerTest{name:"/sta"}})
+//	router.SetRoute("/static/*/wildcard", func() Controller { return &controllerTest{name:"/static/*/wildcard"}})
+	router.SetRoute("/static/*", func() Controller { return &controllerTest{name: "/static/*"}})
+	router.SetRoute("/static/carlo", func() Controller { return &controllerTest{name:"/static/carlo"}})
+//	router.SetRoute("/static/:value", func() Controller { return &controllerTest{name:"/static/:value"}})
+	router.SetRoute("/param/:value", func() Controller { return &controllerTest{name:"/param/:value"}})
+	router.SetRoute("/wildcard/*", func() Controller { return &controllerTest{name:"/wildcard/*"}})
+	router.SetRoute("/*", func() Controller { return &controllerTest{name:"/*"}})
 
 	log.Printf("----- TREE WALKING START -----\n")
-	recursiveWalk(router.tree.root, "/parent/:id/:children")
-	log.Printf("----- TREE WALKING END -----\n")
-
-	log.Printf("----- TREE WALKING START -----\n")
-	recursiveWalk(router.tree.root, "/parent/:id")
+	recursiveWalk(router.tree.root, "/nasmi")
 	log.Printf("----- TREE WALKING END -----\n")
 
 	m.Config.Router = &router
@@ -88,7 +81,7 @@ func TestMage_Run(t *testing.T) {
 
 	m.LaunchApp(app)
 
-	req, err := instance.NewRequest(http.MethodGet, "/fnado", nil)
+	req, err := instance.NewRequest(http.MethodGet, "/static", nil)
 	if err != nil {
 		t.Fatalf("Error creating request %v", err)
 	}

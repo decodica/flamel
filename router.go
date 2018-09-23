@@ -21,6 +21,7 @@ var ErrRouteNotFound = errors.New("Can't find route")
 
 const paramRegex = `:(\w+)`
 const wildcardChar = '*'
+const paramChar = ':'
 
 const segmentRegex = `^/?(\w+)`
 
@@ -44,7 +45,7 @@ func newRoute(urlPart string, factory func() Controller) route {
 	}
 
 	route.name = urlPart
-	route.routeType =static
+	route.routeType = static
 	return route
 }
 
@@ -158,11 +159,21 @@ func (e edges) Sort() {
 type node struct {
 	route *route
 
+	// number of wildcard as direct children
+	wildcardCount int
+
+	// number of parameters as direct children
+	parameterCount int
+
 	//prefix is the common prefix to ignore
 	prefix string
 
 	// sorted slice of edge
 	edges edges
+}
+
+func (n node) isParametrized() bool {
+	return n.parameterCount + n.wildcardCount > 0
 }
 
 func (n *node) isLeaf() bool {
@@ -182,6 +193,7 @@ func (n *node) updateEdge(label byte, node *node) {
 
 	if idx < count && n.edges[idx].label == label {
 		n.edges[idx].node = node
+		log.Printf("Node %s is now at edge %s of parent %s", node.prefix, string(n.edges[idx].label), n.prefix)
 		return
 	}
 
@@ -189,6 +201,11 @@ func (n *node) updateEdge(label byte, node *node) {
 }
 
 func (n *node) getEdge(label byte) *node {
+	log.Printf("Reading node %s, looking for %s", n.prefix, string(label))
+	for i, v := range n.edges {
+		log.Printf("edge.label[%d] %s -> node %s", i, string(v.label), v.node.prefix)
+	}
+
 	count := len(n.edges)
 
 	idx := sort.Search(count, func(i int) bool {
@@ -201,51 +218,11 @@ func (n *node) getEdge(label byte) *node {
 	return nil
 }
 
-// retrieves the edge looking for params if a static match is not found
-func (n *node) getParametricEdge(label byte) *node {
-	log.Printf("Reading node %s", n.prefix)
-	for i, v := range n.edges {
-		log.Printf("edge.label[%d] %s -> node %s", i, string(v.label), v.node.prefix)
+func (n *node) getParametricEdge() *node {
+	if n.wildcardCount > n.parameterCount {
+		return n.getEdge(wildcardChar)
 	}
-
-	count := len(n.edges)
-		/*if n.edges[0].label == ':' {
-			log.Printf("Param at node %+v", n.edges[0].node)
-			return n.edges[0].node
-		}*/
-	idx := sort.Search(count, func(i int) bool {
-		return n.edges[i].label == ':'
-	}); if idx != count {
-		return n.edges[idx].node
-	}
-
-	res := n.getEdge(label)
-	if res != nil {
-		log.Printf("NOT WILDCARD. RES IS %s", res.prefix)
-		return res
-	}
-
-	idx = sort.Search(count, func(i int) bool {
-		log.Printf("label %s", string(n.edges[i].label))
-		return n.edges[i].label == wildcardChar
-	}); if idx != count {
-		log.Printf("WILDCARD!")
-		return n.edges[idx].node
-	}
-
-	return nil
-}
-
-func (n *node) delEdge(label byte) {
-	num := len(n.edges)
-	idx := sort.Search(num, func(i int) bool {
-		return n.edges[i].label >= label
-	})
-	if idx < num && n.edges[idx].label == label {
-		copy(n.edges[idx:], n.edges[idx+1:])
-		n.edges[len(n.edges)-1] = edge{}
-		n.edges = n.edges[:len(n.edges)-1]
-	}
+	return n.getEdge(paramChar)
 }
 
 type tree struct {
@@ -270,6 +247,13 @@ func longestPrefix(k1, k2 string) int {
 	}
 	log.Printf("Confronting %s and %s. Common slice at %d: %s", k1, k2, i, k1[:i])
 	return i
+}
+
+func minPrefix(p1, p2 int) int {
+	if p1 > p2 {
+		return p2
+	}
+	return p1
 }
 
 // adds a new node or updates an existing one
@@ -311,6 +295,14 @@ func (t *tree) insert(route *route) (updated bool) {
 				},
 			}
 			parent.addEdge(e)
+
+			switch route.routeType {
+			case parameter:
+				parent.parameterCount++
+			case wildcard:
+				parent.wildcardCount++
+			}
+
 			t.size++
 			return false
 		}
@@ -318,13 +310,16 @@ func (t *tree) insert(route *route) (updated bool) {
 		// we found an edge to attach the new node
 		// common is the idx of the divergent char
 		// i.e. "aab" and "aac" then common has value 2
-		common := longestPrefix(search, n.prefix)
+		wanted := longestPrefix(search, n.prefix)
+		//todo slash := strings.IndexByte(search, '/')
 
 		// if the prefixes coincide in len
-		// we empty the search and continue the loop
-		// thus adding a node as a leaf or replacing an existing node
-		if common == len(n.prefix) {
-			search = search[common:]
+		// we consume the search and continue the loop with the remaining slice.
+		// we have this case when ex.confronting /static with /static/enzo. In this case the common chars
+		// are equal to the node prefix (/static).
+		// We walk the node and look for a place to append the route following this path
+		if wanted == len(n.prefix) {
+			search = search[wanted:]
 			log.Printf("Searching where to place %s", search)
 			continue
 		}
@@ -332,22 +327,42 @@ func (t *tree) insert(route *route) (updated bool) {
 		// else, we must add the node by splitting the old node
 		t.size++
 
-		// we create an empty new node
-		// starting from the end of the common edge
+		// We split the current node to account for common parts.
+		// the new child has the prefix in common.
+		// ex. /static/carlo with /static/enzo -> the common route is /static/
+		// thus we create a new route-less node with prefix "/static/"
+		// child is the new transition node
 		child := &node{
-			prefix: search[:common],
+			prefix: search[:wanted],
 		}
 		parent.updateEdge(search[0], child)
 
-		//we add the new edge
-		child.addEdge(edge{
-			label: n.prefix[common],
+		// now that we splitted the nodes, we re-prepend the newly created node (created from the split)
+		// to the common part.
+		// ex. we are inserting "/static/enzo" and we find "/static/carlo"
+		// in this case we create a new node with prefix "/static/", we append the "carlo" to the "/static" node
+		// and we add "enzo" to the static node
+		// we must update the state of the wildcardChild, checking if any wildcard are left
+		e := edge{
+			label: n.prefix[wanted],
 			node: n,
-		})
-		n.prefix = n.prefix[common:]
+		}
+		child.addEdge(e)
+		n.prefix = n.prefix[wanted:]
 
+		log.Printf("After moving the nodes, we re-added child %s at edge label %s to parent %s", n.prefix, string(e.label), child.prefix)
+		if n.route != nil {
+			switch n.route.routeType {
+			case parameter:
+				child.parameterCount++
+				parent.parameterCount--
+			case wildcard:
+				child.wildcardCount++
+				parent.wildcardCount--
+			}
+		}
 		// get the remaining slices
-		search = search[common:]
+		search = search[wanted:]
 		// If the new key is a subset of the parent
 		// we add the node to this
 		if len(search) == 0 {
@@ -356,8 +371,7 @@ func (t *tree) insert(route *route) (updated bool) {
 		}
 
 		// else we create a new edge and we append it
-
-		e := edge{
+		e = edge{
 			label: search[0],
 			node: &node{
 				route: route,
@@ -365,6 +379,13 @@ func (t *tree) insert(route *route) (updated bool) {
 			},
 		}
 		child.addEdge(e)
+		switch route.routeType {
+		case parameter:
+			child.parameterCount++
+		case wildcard:
+			child.wildcardCount++
+		}
+		log.Printf("After splitting the nodes, we add child %s at edge label %s to parent %s", e.node.prefix, string(e.label), child.prefix)
 
 		return false
 	}
@@ -372,7 +393,6 @@ func (t *tree) insert(route *route) (updated bool) {
 
 // recursiveWalk is used to do a pre-order walk of a node
 // recursively. Returns true if the walk should be aborted
-
 func recursiveWalk(n *node, path string) bool {
 	if n.route != nil && n.route.name == path {
 		name := ""
@@ -384,7 +404,7 @@ func recursiveWalk(n *node, path string) bool {
 	}
 
 	for _, e := range n.edges {
-		log.Printf("Walking through edge labeled '%s'", string(e.label))
+		log.Printf("Moving from node %s to %s through edge labeled '%s'. \"%s\" node has %d wildcards and %d parameters", n.prefix, e.node.prefix, string(e.label), n.prefix, n.wildcardCount, n.parameterCount)
 		if recursiveWalk(e.node, path) {
 			return true
 		}
@@ -400,6 +420,7 @@ func (t *tree) getRoute(s string) (*route, params) {
 	// maps all params gathered along the path
 	var params params
 
+	log.Printf("LOOKING FOR ROUTE %s", s)
 	for {
 
 		// we traversed all the trie
@@ -408,51 +429,36 @@ func (t *tree) getRoute(s string) (*route, params) {
 			return n.route, params
 		}
 
+		parent := n
 		edge := search[0]
-		n = n.getParametricEdge(edge)
+		n = n.getEdge(edge)
 		// no edge found, route does not exist
-		if n == nil {
-			log.Printf("No node found at edge %s", string(edge))
-			return nil, nil
-		}
+		if n == nil || !strings.HasPrefix(search, n.prefix) {
+			log.Printf("No node found at edge %s while searching for %s. Parent.prefix: %s, Widlcards: %d, Parameters %d. Route is %+v",
+				string(edge), search, parent.prefix, parent.wildcardCount, parent.parameterCount, n)
 
-		if !strings.HasPrefix(search, n.prefix) {
-			log.Printf("HasPrefix is false: search: %s, prefix: %s", search, n.prefix)
+			if parent.isParametrized() {
+				// we couldn't find a match, so we go back one level
+				// and we check if there's a wildcard or a parameter at the parent level.
+				// If so, we walk the wildcard route looking for the correct match.
 
-			// if we have a sibling at the edge the nodes share a "/" slashes
-			// and the node prefix begins without a slash
-			// else the node has no sibling thus the node prefix begins with a slash
-			// thus edge == '/' means that the node has at least one sibling (branch)
+				// check if we are at the end of the search, assuming no backslashes as route end
+				idx := strings.IndexByte(search, '/')
 
-			// when reading params or regex/wildcards we must determine if the node has children
-			// if it does, the algorithm must keep walking the path
-			// else we reached a leaf and we can return
-			// we must account for ending slashes, such as "parent/child/grandchild/
-			// in this case grandchild is a legitimate leaf.
-			// Thus a leaf can end with a backslash
-
-			if n.route != nil && n.route.match(n.prefix) {
-				// check if the search string has further children.
-				// if it does, we keep searching.
-				// else we reached a leaf
-				matches := segmentTester.FindStringSubmatch(search)
-				segment := matches[0]
-				param := matches[1]
-				log.Printf("Matches: %+v", matches)
-				if n.route.routeType == parameter {
-					pname := extractParameter(n.prefix)
-					params.add(pname, param)
-					log.Printf("Added param %s -> %s", pname, param)
+				// we are processing the last path segment, time to extract parameters
+				if idx == -1 {
+					// we found a terminal wildcard, i.e. "\example\enzo" with route "\example\*"
+					// return the node route
+					n = parent.getParametricEdge()
+					if n == nil {
+						break
+					}
+					return n.route, nil
 				}
 
-				search = search[len(segment):]
-				if search == "/" {
-					search = ""
-				}
-				// the param or the wildcard character was at a leaf
-				// we are done with searching
-
-				log.Printf("Will search %s", search)
+				n = parent
+				search = strings.Replace(search, search[:idx], "*", 1)
+				log.Printf("Search has been consumed. Searching for: %s", search)
 				continue
 			}
 			break
@@ -463,9 +469,6 @@ func (t *tree) getRoute(s string) (*route, params) {
 
 	return nil, nil
 }
-
-
-
 
 
 

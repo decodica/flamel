@@ -68,6 +68,7 @@ func TestMage_Run(t *testing.T) {
 	router.SetRoute("/static/carlo", func() Controller { return &controllerTest{name:"/static/carlo"}})
 //	router.SetRoute("/static/:value", func() Controller { return &controllerTest{name:"/static/:value"}})
 	router.SetRoute("/param/:value", func() Controller { return &controllerTest{name:"/param/:value"}})
+	router.SetRoute("/those/are/four/nodes", func() Controller { return &controllerTest{name:"/param/:value"}})
 	router.SetRoute("/wildcard/*", func() Controller { return &controllerTest{name:"/wildcard/*"}})
 	router.SetRoute("/*", func() Controller { return &controllerTest{name:"/*"}})
 
@@ -81,7 +82,7 @@ func TestMage_Run(t *testing.T) {
 
 	m.LaunchApp(app)
 
-	req, err := instance.NewRequest(http.MethodGet, "/static", nil)
+	req, err := instance.NewRequest(http.MethodGet, "/static/cesare", nil)
 	if err != nil {
 		t.Fatalf("Error creating request %v", err)
 	}

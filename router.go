@@ -2,7 +2,7 @@ package mage
 
 import (
 	"context"
-	"github.com/pkg/errors"
+	"errors"
 	"log"
 	"regexp"
 	"sort"
@@ -287,6 +287,25 @@ func (t *tree) insert(route *route) (updated bool) {
 		// or we have an empty tree
 		if n == nil {
 			log.Printf("Adding node for search %s under parent %s", search, parent.prefix)
+			segments := strings.SplitAfter(search, "/")
+			l := len(segments)
+
+			// explode the compressed note by creating a new edge for each extra url
+			// for a given url "/first/second/third" we add the edges: "first/", "second/", "third"
+			for i := 0; i < l - 1; i++ {
+				segment := segments[i]
+				node := node{route: nil, prefix: segment}
+				e := edge{
+					label: segment[0],
+					node: &node,
+				}
+				parent.addEdge(e)
+				log.Printf("Added node to new edge with url segment %s to node with prefix %s and edge %s", node.prefix, parent.prefix, string(e.label))
+				parent = &node
+				t.size++
+			}
+
+			search = segments[l - 1]
 			e := edge{
 				label: search[0],
 				node: &node {
@@ -295,6 +314,7 @@ func (t *tree) insert(route *route) (updated bool) {
 				},
 			}
 			parent.addEdge(e)
+			log.Printf("Added node with prefix %s to parent node with prefix %s at edge %s", e.node.prefix, parent.prefix, string(e.label))
 
 			switch route.routeType {
 			case parameter:
@@ -311,7 +331,6 @@ func (t *tree) insert(route *route) (updated bool) {
 		// common is the idx of the divergent char
 		// i.e. "aab" and "aac" then common has value 2
 		wanted := longestPrefix(search, n.prefix)
-		//todo slash := strings.IndexByte(search, '/')
 
 		// if the prefixes coincide in len
 		// we consume the search and continue the loop with the remaining slice.
@@ -337,7 +356,7 @@ func (t *tree) insert(route *route) (updated bool) {
 		}
 		parent.updateEdge(search[0], child)
 
-		// now that we splitted the nodes, we re-prepend the newly created node (created from the split)
+		// now that we split the nodes, we re-prepend the newly created node (created from the split)
 		// to the common part.
 		// ex. we are inserting "/static/enzo" and we find "/static/carlo"
 		// in this case we create a new node with prefix "/static/", we append the "carlo" to the "/static" node
@@ -361,15 +380,36 @@ func (t *tree) insert(route *route) (updated bool) {
 				parent.wildcardCount--
 			}
 		}
-		// get the remaining slices
+
 		search = search[wanted:]
-		// If the new key is a subset of the parent
-		// we add the node to this
+		// If the new key was the same of the parent
+		// we assign the route to the node.
 		if len(search) == 0 {
 			child.route = route
 			return false
 		}
 
+		// if the prefix contains two or more segments of the url, we break it into multiple
+		// empty nodes
+		segments := strings.SplitAfter(search, "/")
+		l := len(segments)
+
+		// explode the compressed note by creating a new edge for each extra url
+		// for a given url "/first/second/third" we add the edges: "first/", "second/", "third"
+		for i := 0; i < l - 1; i++ {
+			segment := segments[i]
+			node := node{route: nil, prefix: segment}
+			e = edge{
+				label: segment[0],
+				node: &node,
+			}
+			child.addEdge(e)
+			log.Printf("Added node with url segment %s to node with prefix %s and edge %s", node.prefix, child.prefix, string(e.label))
+			child = &node
+			t.size++
+		}
+
+		search = segments[l - 1]
 		// else we create a new edge and we append it
 		e = edge{
 			label: search[0],
@@ -404,7 +444,7 @@ func recursiveWalk(n *node, path string) bool {
 	}
 
 	for _, e := range n.edges {
-		log.Printf("Moving from node %s to %s through edge labeled '%s'. \"%s\" node has %d wildcards and %d parameters", n.prefix, e.node.prefix, string(e.label), n.prefix, n.wildcardCount, n.parameterCount)
+		log.Printf("Moving from parent node %s to %s through edge labeled '%s'. Parent node \"%s\" has %d wildcards and %d parameters", n.prefix, e.node.prefix, string(e.label), n.prefix, n.wildcardCount, n.parameterCount)
 		if recursiveWalk(e.node, path) {
 			return true
 		}

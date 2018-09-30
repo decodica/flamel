@@ -9,6 +9,7 @@ import (
 	"net/http"
 )
 
+// Renders a GO HTML template
 type TemplateRenderer struct {
 	Template     *template.Template
 	TemplateName string
@@ -19,6 +20,7 @@ func (renderer *TemplateRenderer) Render(w http.ResponseWriter) error {
 	return renderer.Template.ExecuteTemplate(w, renderer.TemplateName, renderer.Data)
 }
 
+// Returns the data as JSON object(s)
 type JSONRenderer struct {
 	Data interface{}
 }
@@ -27,6 +29,7 @@ func (renderer *JSONRenderer) Render(w http.ResponseWriter) error {
 	return json.NewEncoder(w).Encode(renderer.Data)
 }
 
+// Renders plain text
 type TextRenderer struct {
 	Data string
 }
@@ -36,6 +39,7 @@ func (renderer *TextRenderer) Render(w http.ResponseWriter) error {
 	return err
 }
 
+// Renders a file as returned from the BlobStore
 type BlobRenderer struct {
 	Data appengine.BlobKey
 }
@@ -43,4 +47,13 @@ type BlobRenderer struct {
 func (renderer *BlobRenderer) Render(w http.ResponseWriter) error {
 	blobstore.Send(w, renderer.Data)
 	return nil
+}
+
+type ErrorRenderer struct {
+	Data error
+}
+
+func (renderer *ErrorRenderer) Render(w http.ResponseWriter) error {
+	_, err := io.WriteString(w, renderer.Data.Error())
+	return err
 }

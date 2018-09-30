@@ -64,7 +64,6 @@ func (out *ResponseOutput) AddCookie(cookie http.Cookie) {
 }
 
 func (out *ResponseOutput) RemoveCookie(name string) {
-	index := -1
 	expires := time.Unix(0, 0)
 	for i, v := range out.cookies {
 		if v.Name == name {
@@ -73,12 +72,6 @@ func (out *ResponseOutput) RemoveCookie(name string) {
 			c.Expires = expires
 			break
 		}
-	}
-
-	if index != -1 {
-		copy(out.cookies[index:], out.cookies[index+1:])
-		out.cookies[len(out.cookies)-1] = nil
-		out.cookies = out.cookies[:len(out.cookies)-1]
 	}
 
 	cookie := http.Cookie{}

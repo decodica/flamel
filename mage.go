@@ -280,7 +280,11 @@ func (mage *mage) Run(w http.ResponseWriter, req *http.Request) {
 		w.WriteHeader(redirect.Status)
 	}
 
-	defer out.Renderer.Render(w)
+	err = out.Renderer.Render(w)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 }
 
 func (mage *mage) destroy(ctx context.Context, controller Controller) {

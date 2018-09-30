@@ -10,15 +10,14 @@ import (
 )
 
 type TemplateRenderer struct {
-	Template *template.Template
+	Template     *template.Template
 	TemplateName string
-	Data interface{}
+	Data         interface{}
 }
 
 func (renderer *TemplateRenderer) Render(w http.ResponseWriter) error {
 	return renderer.Template.ExecuteTemplate(w, renderer.TemplateName, renderer.Data)
 }
-
 
 type JSONRenderer struct {
 	Data interface{}

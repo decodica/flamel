@@ -2,6 +2,7 @@ package mage
 
 import (
 	"distudio.com/mage/cors"
+	"distudio.com/mage/internal/router"
 	"errors"
 	"fmt"
 	"golang.org/x/net/context"
@@ -11,15 +12,14 @@ import (
 	"google.golang.org/appengine/image"
 	"google.golang.org/appengine/memcache"
 	"io/ioutil"
-	"log"
 	"net/http"
 	"strings"
 	"sync"
 )
 
 type mage struct {
-	Config         Config
-	app            Application
+	Config
+	app Application
 }
 
 type Authenticator interface {
@@ -43,18 +43,18 @@ func (mage *mage) LaunchApp(application Application) {
 }
 
 type Config struct {
-	UseMemcache            bool
-	MaxFileUploadSize      int64
+	UseMemcache       bool
+	MaxFileUploadSize int64
 	//true if the server suport Cross Origin Request
-	CORS *cors.Cors
+	CORS                    *cors.Cors
 	EnforceHostnameRedirect string
-	Router *Router
+	Router
 }
 
 func DefaultConfig() Config {
 	config := Config{}
+	config.Router = NewDefaultRouter()
 	config.MaxFileUploadSize = SettingDefaultMaxFileSize
-
 	return config
 }
 
@@ -62,8 +62,8 @@ const (
 	//request related special vars
 	KeyRequestInputs = "request-inputs"
 	KeyRequestMethod = "method"
-	KeyRequestIPV4 = "remote-address"
-	KeyRequestJSON = "__json__"
+	KeyRequestIPV4   = "remote-address"
+	KeyRequestJSON   = "__json__"
 
 	//default at 4 megs
 	SettingDefaultMaxFileSize = (1 << 20) * 4
@@ -186,9 +186,9 @@ func (mage *mage) Run(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	err, controller, params := mage.Config.Router.controllerForPath(ctx, req.URL.Path)
+	err, controller := mage.RouteForPath(ctx, req.URL.Path)
 
-	if err == ErrRouteNotFound {
+	if err == router.ErrRouteNotFound {
 		renderer := TextRenderer{}
 		renderer.Data = err.Error()
 		w.WriteHeader(http.StatusNotFound)
@@ -205,11 +205,10 @@ func (mage *mage) Run(w http.ResponseWriter, req *http.Request) {
 	}
 
 	defer mage.destroy(ctx, controller)
-
 	out := newResponseOutput()
 
 	//add inputs to the context object
-	ctx, err = mage.parseRequestInputs(ctx, req, params)
+	ctx, err = mage.parseRequestInputs(ctx, req)
 	if err != nil {
 		renderer := TextRenderer{}
 		renderer.Data = err.Error()
@@ -290,8 +289,7 @@ func (mage *mage) destroy(ctx context.Context, controller Controller) {
 	mage.app.AfterResponse(ctx)
 }
 
-func (mage mage) parseRequestInputs(ctx context.Context, req *http.Request, params params) (context.Context, error) {
-	log.Printf("Params %+v", params)
+func (mage mage) parseRequestInputs(ctx context.Context, req *http.Request) (context.Context, error) {
 	reqValues := make(RequestInputs)
 
 	method := requestInput{}
@@ -335,7 +333,7 @@ func (mage mage) parseRequestInputs(ctx context.Context, req *http.Request, para
 			}
 		}
 
-		if  strings.Contains(reqType, "application/json") {
+		if strings.Contains(reqType, "application/json") {
 			s := make([]string, 1, 1)
 			i := requestInput{}
 			str, _ := ioutil.ReadAll(req.Body)
@@ -381,16 +379,6 @@ func (mage mage) parseRequestInputs(ctx context.Context, req *http.Request, para
 		s[0] = c.Value
 		i.values = s
 		reqValues[c.Name] = i
-	}
-
-	//add URL params
-	for _, v := range params {
-		i := requestInput{}
-		s := make([]string, 1, 1)
-		s[0] = v.value
-		i.values = s
-		reqValues[v.key] = i
-		log.Printf("%+v : Added param %s -> %s", params, v.key, reqValues[v.key])
 	}
 
 	return context.WithValue(ctx, KeyRequestInputs, reqValues), nil

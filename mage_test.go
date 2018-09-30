@@ -2,6 +2,7 @@ package mage
 
 import (
 	"golang.org/x/net/context"
+	"google.golang.org/appengine"
 	"google.golang.org/appengine/aetest"
 	"log"
 	"net/http"
@@ -38,7 +39,7 @@ func (controller *controllerTest) Process(ctx context.Context, out *ResponseOutp
 	renderer := TextRenderer{}
 	renderer.Data = controller.name
 	out.Renderer = &renderer
-	return Redirect{Status:http.StatusOK}
+	return Redirect{Status: http.StatusOK}
 }
 
 func (controller *controllerTest) OnDestroy(ctx context.Context) {
@@ -60,29 +61,22 @@ func TestMage_Run(t *testing.T) {
 	//set up mage
 	//set up mage instance
 	m := Instance()
-	router := NewRouter()
-	router.SetRoute("/static", func() Controller { return &controllerTest{name:"/static"}})
-//	router.SetRoute("/sta", func() Controller { return &controllerTest{name:"/sta"}})
-//	router.SetRoute("/static/*/wildcard", func() Controller { return &controllerTest{name:"/static/*/wildcard"}})
-	router.SetRoute("/static/*", func() Controller { return &controllerTest{name: "/static/*"}})
-	router.SetRoute("/static/carlo", func() Controller { return &controllerTest{name:"/static/carlo"}})
-//	router.SetRoute("/static/:value", func() Controller { return &controllerTest{name:"/static/:value"}})
-	router.SetRoute("/param/:value", func() Controller { return &controllerTest{name:"/param/:value"}})
-	router.SetRoute("/those/are/four/nodes", func() Controller { return &controllerTest{name:"/param/:value"}})
-	router.SetRoute("/wildcard/*", func() Controller { return &controllerTest{name:"/wildcard/*"}})
-	router.SetRoute("/*", func() Controller { return &controllerTest{name:"/*"}})
-
-	log.Printf("----- TREE WALKING START -----\n")
-	recursiveWalk(router.tree.root, "/nasmi")
-	log.Printf("----- TREE WALKING END -----\n")
-
-	m.Config.Router = &router
+	m.SetRoute("/static", func(ctx context.Context) Controller { return &controllerTest{name: "/static"} })
+	//	router.SetRoute("/sta", func() Controller { return &controllerTest{name:"/sta"}})
+	//	router.SetRoute("/static/*/wildcard", func() Controller { return &controllerTest{name:"/static/*/wildcard"}})
+	m.SetRoute("/static/*", func(ctx context.Context) Controller { return &controllerTest{name: "/static/*"} })
+	m.SetRoute("/static/carlo", func(ctx context.Context) Controller { return &controllerTest{name: "/static/carlo"} })
+	//	router.SetRoute("/static/:value", func() Controller { return &controllerTest{name:"/static/:value"}})
+	m.SetRoute("/param/:param", func(ctx context.Context) Controller { return &controllerTest{name: "/param/:value"} })
+	m.SetRoute("/param/:param/end", func(ctx context.Context) Controller { return &controllerTest{name: "/param/:value/end"} })
+	m.SetRoute("/param/:param/end/:end", func(ctx context.Context) Controller { return &controllerTest{name: "/param/:value/end/:end"} })
+	m.SetRoute("/*", func(ctx context.Context) Controller { return &controllerTest{name: "/*"} })
 
 	app := &appTest{}
 
 	m.LaunchApp(app)
 
-	req, err := instance.NewRequest(http.MethodGet, "/static/cesare", nil)
+	req, err := instance.NewRequest(http.MethodGet, "/param/3/end", nil)
 	if err != nil {
 		t.Fatalf("Error creating request %v", err)
 	}
@@ -94,5 +88,47 @@ func TestMage_Run(t *testing.T) {
 	}
 
 	t.Logf("Recorder status %d. Body is %s", recorder.Code, string(recorder.Body.Bytes()))
+
+}
+
+func BenchmarkFindRoute(b *testing.B) {
+
+	opts := aetest.Options{}
+	instance, err := aetest.NewInstance(&opts)
+
+	if err != nil {
+		b.Fatalf("Error creating instance %v", err)
+	}
+	defer instance.Close()
+
+	//set up mage
+	//set up mage instance
+	m := Instance()
+
+	m.SetRoute("/param/:param/end/:end", func(ctx context.Context) Controller { return &controllerTest{name: "/param/:value/end/:end"} })
+
+	app := &appTest{}
+
+	m.LaunchApp(app)
+
+	req, err := instance.NewRequest(http.MethodGet, "/param/5/end/7", nil)
+	if err != nil {
+		b.Fatalf("Error creating request %v", err)
+	}
+	ctx := appengine.NewContext(req)
+
+	if err != nil {
+		b.Fatalf("Error creating context: %s", err)
+	}
+
+	b.Run("Find route", func(b *testing.B) {
+		for i := 0; i < b.N; i++ {
+			err, _ = m.Router.RouteForPath(ctx, req.URL.Path)
+			if err != nil {
+				b.Fatalf("Error retrieving route: %s", err)
+			}
+		}
+
+	})
 
 }

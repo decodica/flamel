@@ -8,7 +8,7 @@ import (
 type requestItem int64
 
 type requestInput struct {
-	values      []string
+	values []string
 }
 
 func (req requestInput) Multiple() bool {
@@ -42,15 +42,15 @@ type Renderer interface {
 }
 
 type ResponseOutput struct {
-	cookies     []*http.Cookie
-	headers     map[string]string
-	Renderer    Renderer
+	cookies  []*http.Cookie
+	headers  map[string]string
+	Renderer Renderer
 }
 
 func newResponseOutput() ResponseOutput {
 	out := ResponseOutput{}
 	out.headers = make(map[string]string)
-	out.Renderer = &TextRenderer{Data:""}
+	out.Renderer = &TextRenderer{Data: ""}
 	return out
 }
 
@@ -65,7 +65,7 @@ func (out *ResponseOutput) AddCookie(cookie http.Cookie) {
 
 func (out *ResponseOutput) RemoveCookie(name string) {
 	index := -1
-	expires := time.Unix(0,0)
+	expires := time.Unix(0, 0)
 	for i, v := range out.cookies {
 		if v.Name == name {
 			c := out.cookies[i]

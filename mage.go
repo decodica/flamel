@@ -186,7 +186,7 @@ func (mage *mage) Run(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	err, controller := mage.RouteForPath(ctx, req.URL.Path)
+	ctx, err, controller := mage.RouteForPath(ctx, req.URL.Path)
 
 	if err == router.ErrRouteNotFound {
 		renderer := TextRenderer{}
@@ -383,6 +383,12 @@ func (mage mage) parseRequestInputs(ctx context.Context, req *http.Request) (con
 		s[0] = c.Value
 		i.values = s
 		reqValues[c.Name] = i
+	}
+
+	// add url params to the response
+	params := RoutingParams(ctx)
+	for k, v := range params {
+		reqValues[k] = v
 	}
 
 	return context.WithValue(ctx, KeyRequestInputs, reqValues), nil

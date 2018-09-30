@@ -99,14 +99,14 @@ func (router *Router) SetRoute(path string, handler func(ctx context.Context) in
 	router.tree.insert(&route)
 }
 
-func (router *Router) RouteForPath(ctx context.Context, path string) (error, interface{}) {
+func (router *Router) RouteForPath(ctx context.Context, path string) (context.Context, error, interface{}) {
 	route, params := router.tree.findRoute(path)
 
 	if route == nil {
-		return ErrRouteNotFound, nil
+		return ctx, ErrRouteNotFound, nil
 	}
 
 	c := context.WithValue(ctx, RoutingParamsKey, params)
 	controller := route.Handler(c)
-	return nil, controller
+	return c, nil, controller
 }

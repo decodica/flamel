@@ -8,7 +8,7 @@ import (
 type Router interface {
 	SetRoute(url string, handler func(ctx context.Context) Controller)
 
-	RouteForPath(ctx context.Context, path string) (error, Controller)
+	RouteForPath(ctx context.Context, path string) (context.Context, error, Controller)
 }
 
 type DefaultRouter struct {
@@ -21,15 +21,17 @@ func NewDefaultRouter() *DefaultRouter {
 	return &dr
 }
 
-func (r DefaultRouter) RoutingParams(ctx context.Context) RequestInputs {
-	params := ctx.Value(router.RoutingParamsKey).(router.Params)
-	inputs := make(RequestInputs, len(params))
-	for _, p := range params {
-		i := requestInput{}
-		i.values = []string{p.Value}
-		inputs[p.Key] = i
+func RoutingParams(ctx context.Context) RequestInputs {
+	if params, ok := ctx.Value(router.RoutingParamsKey).(router.Params); ok {
+		inputs := make(RequestInputs, len(params))
+		for _, p := range params {
+			i := requestInput{}
+			i.values = []string{p.Value}
+			inputs[p.Key] = i
+		}
+		return inputs
 	}
-	return inputs
+	return nil
 }
 
 func (router *DefaultRouter) SetRoute(url string, handler func(ctx context.Context) Controller) {
@@ -38,10 +40,10 @@ func (router *DefaultRouter) SetRoute(url string, handler func(ctx context.Conte
 	})
 }
 
-func (router *DefaultRouter) RouteForPath(ctx context.Context, path string) (error, Controller) {
-	err, controller := router.Router.RouteForPath(ctx, path)
+func (router *DefaultRouter) RouteForPath(ctx context.Context, path string) (context.Context, error, Controller) {
+	c, err, controller := router.Router.RouteForPath(ctx, path)
 	if err != nil {
-		return err, nil
+		return c, err, nil
 	}
-	return nil, controller.(Controller)
+	return c, nil, controller.(Controller)
 }

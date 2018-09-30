@@ -67,8 +67,20 @@ func TestMage_Run(t *testing.T) {
 	m.SetRoute("/static/*", func(ctx context.Context) Controller { return &controllerTest{name: "/static/*"} })
 	m.SetRoute("/static/carlo", func(ctx context.Context) Controller { return &controllerTest{name: "/static/carlo"} })
 	//	router.SetRoute("/static/:value", func() Controller { return &controllerTest{name:"/static/:value"}})
-	m.SetRoute("/param/:param", func(ctx context.Context) Controller { return &controllerTest{name: "/param/:value"} })
-	m.SetRoute("/param/:param/end", func(ctx context.Context) Controller { return &controllerTest{name: "/param/:value/end"} })
+	m.SetRoute("/param/:param", func(ctx context.Context) Controller {
+		params := RoutingParams(ctx)
+		for k, p := range params {
+			log.Printf("Param %q -> %s", k, p.Value())
+		}
+		return &controllerTest{name: "/param/:value"}
+	})
+	m.SetRoute("/param/:param/end", func(ctx context.Context) Controller {
+		params := RoutingParams(ctx)
+		for k, p := range params {
+			log.Printf("Param %q -> %s", k, p.Value())
+		}
+		return &controllerTest{name: "/param/:value/end"}
+	})
 	m.SetRoute("/param/:param/end/:end", func(ctx context.Context) Controller { return &controllerTest{name: "/param/:value/end/:end"} })
 	m.SetRoute("/*", func(ctx context.Context) Controller { return &controllerTest{name: "/*"} })
 
@@ -76,7 +88,7 @@ func TestMage_Run(t *testing.T) {
 
 	m.LaunchApp(app)
 
-	req, err := instance.NewRequest(http.MethodGet, "/param/3/end", nil)
+	req, err := instance.NewRequest(http.MethodGet, "/static", nil)
 	if err != nil {
 		t.Fatalf("Error creating request %v", err)
 	}
@@ -123,7 +135,7 @@ func BenchmarkFindRoute(b *testing.B) {
 
 	b.Run("Find route", func(b *testing.B) {
 		for i := 0; i < b.N; i++ {
-			err, _ = m.Router.RouteForPath(ctx, req.URL.Path)
+			_, err, _ = m.Router.RouteForPath(ctx, req.URL.Path)
 			if err != nil {
 				b.Fatalf("Error retrieving route: %s", err)
 			}

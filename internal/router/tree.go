@@ -334,14 +334,22 @@ func (t *tree) findRoute(s string) (*Route, Params) {
 
 	// maps all params gathered along the path
 	// avoid the use of append
-	params := make(Params, maxParamsInPath(s))
+	var params Params
 	pcount := 0
+
+	if max := maxParamsInPath(s); max > 0 {
+		params = make(Params, max)
+	}
+
 	for {
 
 		// we traversed all the trie
 		// return the route at the node
 		if len(search) == 0 {
-			return n.route, params
+			if pcount > 0 {
+				return n.route, params[:pcount]
+			}
+			return n.route, nil
 		}
 
 		parent := n
@@ -371,7 +379,10 @@ func (t *tree) findRoute(s string) (*Route, Params) {
 					}
 
 					if n = parent.wildCardChild(); n != nil {
-						return n.route, params[:pcount]
+						if pcount > 0 {
+							return n.route, params[:pcount]
+						}
+						return n.route, nil
 					}
 
 					break

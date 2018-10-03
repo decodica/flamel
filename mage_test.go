@@ -1,7 +1,7 @@
 package mage
 
 import (
-	"golang.org/x/net/context"
+	"context"
 	"google.golang.org/appengine"
 	"google.golang.org/appengine/aetest"
 	"log"
@@ -62,10 +62,8 @@ func TestMage_Run(t *testing.T) {
 	//set up mage instance
 	m := Instance()
 	m.SetRoute("/static", func(ctx context.Context) Controller { return &controllerTest{name: "/static"} })
-	//	router.SetRoute("/sta", func() Controller { return &controllerTest{name:"/sta"}})
-	//	router.SetRoute("/static/*/wildcard", func() Controller { return &controllerTest{name:"/static/*/wildcard"}})
 	m.SetRoute("/static/*", func(ctx context.Context) Controller { return &controllerTest{name: "/static/*"} })
-	m.SetRoute("/static/carlo", func(ctx context.Context) Controller { return &controllerTest{name: "/static/carlo"} })
+	m.SetRoute("/static/*/carlo", func(ctx context.Context) Controller { return &controllerTest{name: "/static//carlo"} })
 	//	router.SetRoute("/static/:value", func() Controller { return &controllerTest{name:"/static/:value"}})
 	m.SetRoute("/param/:param", func(ctx context.Context) Controller {
 		params := RoutingParams(ctx)
@@ -81,14 +79,14 @@ func TestMage_Run(t *testing.T) {
 		}
 		return &controllerTest{name: "/param/:value/end"}
 	})
-	m.SetRoute("/param/:param/end/:end", func(ctx context.Context) Controller { return &controllerTest{name: "/param/:value/end/:end"} })
-	m.SetRoute("/*", func(ctx context.Context) Controller { return &controllerTest{name: "/*"} })
+	m.SetRoute("/param/:param/:end", func(ctx context.Context) Controller { return &controllerTest{name: "/param/:value/:end"} })
+//	m.SetRoute("/*", func(ctx context.Context) Controller { return &controllerTest{name: "/*"} })
 
 	app := &appTest{}
 
 	m.LaunchApp(app)
 
-	req, err := instance.NewRequest(http.MethodGet, "/static", nil)
+	req, err := instance.NewRequest(http.MethodGet, "/param/categoria/prodotto", nil)
 	if err != nil {
 		t.Fatalf("Error creating request %v", err)
 	}

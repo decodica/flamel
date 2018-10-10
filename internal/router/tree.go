@@ -9,11 +9,11 @@ import (
 // heavily inspired by @https://github.com/armon/go-radix/blob/master/radix.go
 // a route is our leaf node, where route name is the key.
 // Differently from a pure radix tree, on insertion all path segments are created if they do not exist
-// ex: inserting only the node at "/my/route/example" creates four nodes, separated by '/'
-// namely: "/", "my/", "route/", "example"
+// ex: inserting only the node at "/my/route/example" creates six nodes, separated by '/'
+// namely: "/", "my", "/", "route", "/", "example"
 
-// An edge connect one node with another in a parent->child relation
-// The label is the byte connecting each node and coincides with the first character
+// An edge connects one node with another in a parent->child relation
+// The label is the byte connecting each node and it coincides with the first character
 // of the child node
 type edge struct {
 	label byte
@@ -26,7 +26,7 @@ func (e edges) Len() int {
 	return len(e)
 }
 
-// edges implements sortable interface
+// edges implement the sortable interface
 func (e edges) Less(i, j int) bool {
 	return e[i].label < e[j].label
 }
@@ -40,7 +40,6 @@ func (e edges) Sort() {
 }
 
 // The node of the tree
-// it contains
 type node struct {
 	// route associated with the node. It can be nil
 	route *Route

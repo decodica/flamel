@@ -3,7 +3,7 @@ package router
 import (
 	"sort"
 	"strings"
-)
+	)
 
 // A specialized radix tree implementation to handle route matching.
 // heavily inspired by @https://github.com/armon/go-radix/blob/master/radix.go
@@ -78,7 +78,7 @@ func (n *node) updateEdge(label byte, node *node) {
 		return
 	}
 
-	panic("Update on missing edge")
+	panic("update on missing edge")
 }
 
 func (n *node) getEdge(label byte) *node {
@@ -131,6 +131,31 @@ func longestPrefix(k1, k2 string) int {
 	}
 	return i
 }
+// explode the compressed note by creating a new edge for each extra url
+// for a given url "/first/second/third" we add the edges: "/", "first", "/", "second", "/", "third"
+func splitSegments(url string) []string {
+
+	segments := make([]string, 0)
+	for len(url) > 0 {
+		idx := strings.IndexByte(url, '/')
+		if idx == -1 {
+			segments = append(segments, url)
+			break
+		}
+
+		if idx == 0 {
+			segments = append(segments, string(url[0]))
+			url = url[1:]
+			continue
+		}
+
+		s, slash := url[:idx], url[idx:idx + 1]
+		segments = append(segments, s, slash)
+		url = url[idx + 1:]
+	}
+
+	return segments
+}
 
 // adds a new node or updates an existing one
 // returns true if the node has been updated
@@ -159,41 +184,31 @@ func (t *tree) insert(route *Route) {
 		// and we connect it to the new node (parent)-----(new-node)
 		// or we have an empty tree
 		if n == nil {
-			segments := strings.SplitAfter(search, "/")
+			segments := splitSegments(search)
 			l := len(segments)
 
-			// explode the compressed note by creating a new edge for each extra url
-			// for a given url "/first/second/third" we add the edges: "first/", "second/", "third"
-			for i := 0; i < l-1; i++ {
+			for i := 0; i < l; i++ {
+				var r *Route
+				if i == l - 1 {
+					r = route
+				}
+
 				segment := segments[i]
-				node := node{route: nil, prefix: segment}
+				node := node{route: r, prefix: segment}
 				e := edge{
 					label: segment[0],
 					node:  &node,
+				}
+				switch e.label {
+				case paramChar:
+					parent.parameterCount++
+				case wildcardChar:
+					parent.wildcardCount++
 				}
 				parent.addEdge(e)
 				parent = &node
 				t.size++
 			}
-
-			search = segments[l-1]
-			e := edge{
-				label: search[0],
-				node: &node{
-					route:  route,
-					prefix: search,
-				},
-			}
-			parent.addEdge(e)
-
-			switch route.routeType {
-			case parameter:
-				parent.parameterCount++
-			case wildcard:
-				parent.wildcardCount++
-			}
-
-			t.size++
 			return
 		}
 
@@ -239,11 +254,11 @@ func (t *tree) insert(route *Route) {
 		n.prefix = n.prefix[wanted:]
 
 		if n.route != nil {
-			switch n.route.routeType {
-			case parameter:
+			switch e.label {
+			case paramChar:
 				child.parameterCount++
 				parent.parameterCount--
-			case wildcard:
+			case wildcardChar:
 				child.wildcardCount++
 				parent.wildcardCount--
 			}
@@ -259,38 +274,29 @@ func (t *tree) insert(route *Route) {
 
 		// if the prefix contains two or more segments of the url, we break it into multiple
 		// empty nodes
-		segments := strings.SplitAfter(search, "/")
+		segments := splitSegments(search)
 		l := len(segments)
 
-		// explode the compressed note by creating a new edge for each extra url
-		// for a given url "/first/second/third" we add the edges: "first/", "second/", "third"
-		for i := 0; i < l-1; i++ {
+		for i := 0; i < l; i++ {
+			var r *Route
+			if i == l - 1 {
+				r = route
+			}
 			segment := segments[i]
-			node := node{route: nil, prefix: segment}
+			node := node{route: r, prefix: segment}
 			e = edge{
 				label: segment[0],
 				node:  &node,
 			}
+			switch e.label {
+			case paramChar:
+				child.parameterCount++
+			case wildcardChar:
+				child.wildcardCount++
+			}
 			child.addEdge(e)
 			child = &node
 			t.size++
-		}
-
-		search = segments[l-1]
-		// else we create a new edge and we append it
-		e = edge{
-			label: search[0],
-			node: &node{
-				route:  route,
-				prefix: search,
-			},
-		}
-		child.addEdge(e)
-		switch route.routeType {
-		case parameter:
-			child.parameterCount++
-		case wildcard:
-			child.wildcardCount++
 		}
 
 		return
@@ -356,7 +362,6 @@ func (t *tree) findRoute(s string) (*Route, Params) {
 		n = n.getEdge(edge)
 		// no edge found, route does not exist
 		if n == nil || !strings.HasPrefix(search, n.prefix) {
-
 			if parent.isParametrized() {
 				// we couldn't find a match, so we go back one level
 				// and we check if there's a wildcard or a parameter at the parent level.
@@ -389,6 +394,7 @@ func (t *tree) findRoute(s string) (*Route, Params) {
 
 				n = parent
 				child := parent.parametricChild()
+
 				if child != nil {
 					p := Param{Key: child.prefix[1:], Value: search[:idx]}
 					params[pcount] = p
@@ -396,8 +402,9 @@ func (t *tree) findRoute(s string) (*Route, Params) {
 				} else {
 					child = parent.wildCardChild()
 				}
+				sub := child.prefix
 
-				search = strings.Replace(search, search[:idx], child.prefix, 1)
+				search = strings.Replace(search, search[:idx], sub, 1)
 				continue
 			}
 			break

@@ -14,7 +14,7 @@ import (
 	"strings"
 	"io/ioutil"
 	"fmt"
-)
+	)
 
 type mage struct {
 	//user factory
@@ -73,11 +73,13 @@ const (
 	token_auth_key   string = "SSID"
 	token_expiry_key string = "SSID_EXP"
 
+	appengine_cron_header = "X-Appengine-Cron"
+
 	//request related special vars
-	REQUEST_USER = "mage-user";
-	REQUEST_INPUTS = "request-inputs";
-	REQUEST_METHOD = "method";
-	REQUEST_IPV4 = "remote-address";
+	REQUEST_USER = "mage-user"
+	REQUEST_INPUTS = "request-inputs"
+	REQUEST_METHOD = "method"
+	REQUEST_IPV4 = "remote-address"
 	REQUEST_JSON_DATA = "__json__"
 
 	//default at 4 megs
@@ -175,7 +177,9 @@ func (mage *mage) Run(w http.ResponseWriter, req *http.Request) {
 
 	//if we enforce the hostname and the request hostname doesn't match, we redirect to the requested host
 	//host is in the form domainname.com
-	if mage.Config.EnforceHostnameRedirect != "" && mage.Config.EnforceHostnameRedirect != req.Host {
+	//if it's a cron job we skip the redirect
+	isCron := req.Header.Get(appengine_cron_header) == "true"
+	if !isCron && mage.Config.EnforceHostnameRedirect != "" && mage.Config.EnforceHostnameRedirect != req.Host {
 		scheme := "http://";
 		if req.URL.Scheme == "https" {
 			scheme = "https://";

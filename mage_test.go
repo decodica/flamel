@@ -2,6 +2,7 @@ package mage
 
 import (
 	"context"
+	"fmt"
 	"google.golang.org/appengine"
 	"google.golang.org/appengine/aetest"
 	"log"
@@ -20,10 +21,6 @@ func (app *appTest) OnStart(ctx context.Context) context.Context {
 
 //called after each response has been finalized
 func (app *appTest) AfterResponse(ctx context.Context) {
-}
-
-func (app *appTest) AuthenticatorForPath(path string) Authenticator {
-	return nil
 }
 
 //controller
@@ -46,6 +43,28 @@ func (controller *controllerTest) OnDestroy(ctx context.Context) {
 
 }
 
+type userTest struct {
+}
+
+type authenticatorTest struct {
+	Authenticator
+	t *testing.T
+}
+
+const keyUser = "__user__"
+
+func (self *authenticatorTest) Authenticate(ctx context.Context) context.Context {
+	ins := InputsFromContext(ctx)
+	l := fmt.Sprintf("Authenticating user for request %s", ins[KeyRequestURL].Value())
+	log.Printf(l)
+	ctx = context.WithValue(ctx, keyUser, &userTest{})
+	user := ctx.Value(keyUser)
+	if user == nil {
+		self.t.Fatalf("User is nil")
+	}
+	return ctx
+}
+
 func TestMage_Run(t *testing.T) {
 
 	t.Log("*** TEST STARTED ***")
@@ -60,33 +79,40 @@ func TestMage_Run(t *testing.T) {
 
 	//set up mage
 	m := Instance()
-	m.SetRoute("", func(ctx context.Context) Controller { return &controllerTest{name: "root"} })
-	m.SetRoute("/static", func(ctx context.Context) Controller { return &controllerTest{name: "/static"} })
-	m.SetRoute("/static/*", func(ctx context.Context) Controller { return &controllerTest{name: "/static/*"} })
-	m.SetRoute("/static/*/carlo", func(ctx context.Context) Controller { return &controllerTest{name: "/static//carlo"} })
-	//	router.SetRoute("/static/:value", func() Controller { return &controllerTest{name:"/static/:value"}})
+	m.SetRoute("", func(ctx context.Context) Controller { return &controllerTest{name: "root"} }, nil)
+	m.SetRoute("/static", func(ctx context.Context) Controller { return &controllerTest{name: "/static"} }, nil)
+	m.SetRoute("/static/*", func(ctx context.Context) Controller { return &controllerTest{name: "/static/*"} }, nil)
+	m.SetRoute("/static/*/carlo", func(ctx context.Context) Controller { return &controllerTest{name: "/static//carlo"} }, nil)
 	m.SetRoute("/param/:param", func(ctx context.Context) Controller {
 		params := RoutingParams(ctx)
 		for k, p := range params {
 			log.Printf("Param %q -> %s", k, p.Value())
 		}
 		return &controllerTest{name: "/param/:value"}
-	})
+	}, nil)
+
+	m.SetRoute("/auth/:param", func(ctx context.Context) Controller {
+		params := RoutingParams(ctx)
+		for k, p := range params {
+			log.Printf("Param %q -> %s", k, p.Value())
+		}
+		return &controllerTest{name: "/auth/:value"}
+	}, &authenticatorTest{t: t})
+
 	m.SetRoute("/param/:param/end", func(ctx context.Context) Controller {
 		params := RoutingParams(ctx)
 		for k, p := range params {
 			log.Printf("Param %q -> %s", k, p.Value())
 		}
 		return &controllerTest{name: "/param/:value/end"}
-	})
-	m.SetRoute("/param/:param/:end", func(ctx context.Context) Controller { return &controllerTest{name: "/param/:value/:end"} })
-//	m.SetRoute("/*", func(ctx context.Context) Controller { return &controllerTest{name: "/*"} })
+	}, nil)
+	m.SetRoute("/param/:param/:end", func(ctx context.Context) Controller { return &controllerTest{name: "/param/:value/:end"} }, nil)
 
 	app := &appTest{}
 
 	m.LaunchApp(app)
 
-	req, err := instance.NewRequest(http.MethodGet, "", nil)
+	req, err := instance.NewRequest(http.MethodGet, "/auth/3", nil)
 
 	if err != nil {
 		t.Fatalf("Error creating request %v", err)
@@ -116,7 +142,7 @@ func BenchmarkFindRoute(b *testing.B) {
 	//set up mage instance
 	m := Instance()
 
-	m.SetRoute("/param/:param/end/:end", func(ctx context.Context) Controller { return &controllerTest{name: "/param/:value/end/:end"} })
+	m.SetRoute("/param/:param/end/:end", func(ctx context.Context) Controller { return &controllerTest{name: "/param/:value/end/:end"} }, nil)
 
 	app := &appTest{}
 

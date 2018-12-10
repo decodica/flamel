@@ -22,17 +22,11 @@ type mage struct {
 	app Application
 }
 
-type Authenticator interface {
-	Authenticate(ctx context.Context) context.Context
-}
-
 type Application interface {
 	//called as soon as the request is received and the context is created
 	OnStart(ctx context.Context) context.Context
 	//called after each response has been finalized
 	AfterResponse(ctx context.Context)
-	//todo: move authentication to router
-	AuthenticatorForPath(path string) Authenticator
 }
 
 func (mage *mage) LaunchApp(application Application) {
@@ -63,7 +57,9 @@ const (
 	KeyRequestInputs = "request-inputs"
 	KeyRequestMethod = "method"
 	KeyRequestIPV4   = "remote-address"
-	KeyRequestJSON   = "__json__"
+	KeyRequestJSON   = "__mage_json__"
+	KeyRequestURL    = "__mage_URL__"
+	KeyRequestScheme = "__mage_Scheme__"
 
 	//default at 4 megs
 	SettingDefaultMaxFileSize = (1 << 20) * 4
@@ -186,6 +182,16 @@ func (mage *mage) Run(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
+	//add inputs to the context object
+	ctx, err := mage.parseRequestInputs(ctx, req)
+	if err != nil {
+		renderer := TextRenderer{}
+		renderer.Data = err.Error()
+		w.WriteHeader(http.StatusInternalServerError)
+		renderer.Render(w)
+		return
+	}
+
 	ctx, err, controller := mage.RouteForPath(ctx, req.URL.Path)
 
 	if err == router.ErrRouteNotFound {
@@ -206,22 +212,6 @@ func (mage *mage) Run(w http.ResponseWriter, req *http.Request) {
 
 	defer mage.destroy(ctx, controller)
 	out := newResponseOutput()
-
-	//add inputs to the context object
-	ctx, err = mage.parseRequestInputs(ctx, req)
-	if err != nil {
-		renderer := TextRenderer{}
-		renderer.Data = err.Error()
-		w.WriteHeader(http.StatusInternalServerError)
-		renderer.Render(w)
-		return
-	}
-
-	authenticator := mage.app.AuthenticatorForPath(req.URL.Path)
-
-	if authenticator != nil {
-		ctx = authenticator.Authenticate(ctx)
-	}
 
 	//handle the CORS framework
 	if mage.Config.CORS != nil {
@@ -296,17 +286,21 @@ func (mage *mage) destroy(ctx context.Context, controller Controller) {
 func (mage mage) parseRequestInputs(ctx context.Context, req *http.Request) (context.Context, error) {
 	reqValues := make(RequestInputs)
 
-	method := requestInput{}
-	m := make([]string, 1, 1)
-	m[0] = req.Method
-	method.values = m
-	reqValues[KeyRequestMethod] = method
+	reqValues[KeyRequestScheme] = requestInput{
+		[]string{req.URL.Scheme},
+	}
 
-	ipV := requestInput{}
-	ip := make([]string, 0)
-	ip = append(ip, req.RemoteAddr)
-	ipV.values = ip
-	reqValues[KeyRequestIPV4] = ipV
+	reqValues[KeyRequestURL] = requestInput{
+		[]string{req.URL.Path},
+	}
+
+	reqValues[KeyRequestMethod] = requestInput{
+		[]string{req.Method},
+	}
+
+	reqValues[KeyRequestIPV4] = requestInput{
+		[]string{req.RemoteAddr},
+	}
 
 	//get request params
 	switch req.Method {

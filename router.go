@@ -6,7 +6,7 @@ import (
 )
 
 type Router interface {
-	SetRoute(url string, handler func(ctx context.Context) Controller)
+	SetRoute(url string, handler func(ctx context.Context) Controller, authenticator Authenticator)
 
 	RouteForPath(ctx context.Context, path string) (context.Context, error, Controller)
 }
@@ -34,8 +34,11 @@ func RoutingParams(ctx context.Context) RequestInputs {
 	return nil
 }
 
-func (router *DefaultRouter) SetRoute(url string, handler func(ctx context.Context) Controller) {
+func (router *DefaultRouter) SetRoute(url string, handler func(ctx context.Context) Controller, authenticator Authenticator) {
 	router.Router.SetRoute(url, func(ctx context.Context) interface{} {
+		if authenticator != nil {
+			ctx = authenticator.Authenticate(ctx)
+		}
 		return handler(ctx)
 	})
 }

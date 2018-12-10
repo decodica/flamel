@@ -8,6 +8,9 @@ import (
 type Router interface {
 	SetRoute(url string, handler func(ctx context.Context) Controller, authenticator Authenticator)
 
+	// Utility method. Calls @SetRoute on each element of @urls
+	SetRoutes(urls []string, handler func(ctx context.Context) Controller, authenticator Authenticator)
+
 	RouteForPath(ctx context.Context, path string) (context.Context, error, Controller)
 }
 
@@ -32,6 +35,12 @@ func RoutingParams(ctx context.Context) RequestInputs {
 		return inputs
 	}
 	return nil
+}
+
+func (router *DefaultRouter) SetRoutes(urls []string, handler func(ctx context.Context) Controller, authenticator Authenticator) {
+	for _, v := range urls {
+		router.SetRoute(v, handler, authenticator)
+	}
 }
 
 func (router *DefaultRouter) SetRoute(url string, handler func(ctx context.Context) Controller, authenticator Authenticator) {

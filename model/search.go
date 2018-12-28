@@ -1,247 +1,283 @@
 package model
 
-/*import (
+import (
+	"bytes"
+	"context"
+	"fmt"
 	"google.golang.org/appengine/search"
+	"log"
 	"reflect"
 	"strings"
+	"sync"
 
 	"errors"
 	"google.golang.org/appengine/datastore"
-	"google.golang.org/appengine/log"
 	//"log"
 )
 
 //flag fields that we want to search with "prototype:search"
-const tag_search string = "search";
+const tagSearch string = "search"
 
-func (model *Model) Save() ([]search.Field, *search.DocumentMetadata, error) {
+type searchType int
+const (
+	// string
+	_str searchType = iota
+	_int
+	_f64
+	_html
+	_time
+	_key
+	_geopoint
+)
 
-	var fields []search.Field;
-
-	model.parseSearchTags(&fields, nil);
-
-	if len(fields) > 0 {
-		return fields, nil, nil;
-	}
-
-	return nil, nil, nil;
+// describes the searchable fields for each modelable
+type fieldDescriptor struct {
+	index int
+	name string
+	searchType
 }
 
-func (model *Model) parseSearchTags(searchFields *[]search.Field, meta *search.DocumentMetadata) {
-	proto := reflect.ValueOf(model.m).Elem();
-	for i := 0; i < proto.NumField(); i++ {
-		field := proto.Type().Field(i);
+var searchMutex sync.Mutex
+var searchableDefs = map[reflect.Type][]*fieldDescriptor{}
 
-		name, _ := field.Tag.Get(tag_domain), ""
+type searchable struct {
+	*Model
+}
+
+// maps the searchable fields of a given struct to searchable fields to ease the runtime retrieval
+func getSearchablefields(t reflect.Type) []*fieldDescriptor {
+	searchMutex.Lock()
+	// we already parsed the searchable fields of type t
+	if descs, ok := searchableDefs[t]; ok {
+		return descs
+	}
+
+	var descriptors []*fieldDescriptor
+
+	for i := 0; i < t.NumField(); i++ {
+		field := t.Field(i)
+
+		name := field.Tag.Get(tagDomain)
 		if i := strings.Index(name, ","); i != -1 {
-			name, _ = name[:i], name[i+1:]
+			name = name[:i]
 		}
 
-		//if the field is eligible for searching:
-		if name == tag_search {
+		// the field has been flagged if it has model:search tag
+		if name == tagSearch {
+			desc := fieldDescriptor{}
+			desc.index = i
+			desc.name = field.Name
 
-			ptr := proto.Field(i).Interface();
-			zero := reflect.Zero(field.Type).Interface();
-
-			if ptr == zero {
-				continue;
-			}
-
-			sf := search.Field{};
-			sf.Name = field.Name;
+			log.Printf("reading field %s of kind %v", desc.name, field.Type.Kind())
 
 			switch field.Type.Kind() {
-				case reflect.Bool:
-					sf.Value = proto.Field(i).Bool();
 				case reflect.String:
-					sf.Value = proto.Field(i).String();
+					desc.searchType = _str
+				case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+					desc.searchType = _int
+				case reflect.Float32, reflect.Float64:
+					desc.searchType = _f64
 				case reflect.Struct:
-				//if we have a reference, than save the id of the ref
-					ref, ok := model.references[i];
-
-					if !ok {
-						continue;
+					// we do not refer to a modelable, so it is not searchable
+					switch field.Type {
+					case typeOfTime:
+						desc.searchType = _time
+					case typeOfModelable:
+						desc.searchType = _key
+					case typeOfGeoPoint:
+						desc.searchType = _geopoint
 					}
-					//should always have a ref with key here, since it's called after create/update
-					sf.Value = search.Atom(ref.key.Encode());
-				default:
-					continue;
 			}
 
-			*searchFields = append(*searchFields, sf);
+			descriptors = append(descriptors, &desc)
 		}
 	}
+	searchableDefs[t] = descriptors
+	searchMutex.Unlock()
+	return descriptors
 }
 
-func (model Model) Index() error {
-	if !model.searchable {
-		return errors.New("Model is not searchable");
+
+func (model *searchable) Save() ([]search.Field, *search.DocumentMetadata, error) {
+
+	descs := getSearchablefields(reflect.TypeOf(model.modelable).Elem())
+	l := len(descs)
+
+	if l == 0 {
+		return nil, nil, nil
 	}
 
-	index, err := search.Open(model.entityName);
-	if nil != err {
-		panic(err);
+	val := reflect.ValueOf(model.modelable).Elem()
+
+	fields := make([]search.Field, l, cap(descs))
+
+	for i, desc := range descs {
+		sf := &fields[i]
+		sf.Name = desc.name
+
+		field := val.Field(desc.index)
+		switch desc.searchType {
+		case _str, _html:
+			sf.Value = field.String()
+		case _f64:
+			sf.Value = float64(field.Float())
+		case _int:
+			sf.Value = float64(field.Int())
+		case _time, _geopoint:
+			sf.Value = field.Elem()
+		case _key:
+			key := model.references[desc.index].Key
+			sf.Value = search.Atom(key.Encode())
+		}
 	}
 
-	_, err = index.Put(model.context, model.key.Encode(), &model);
+	return fields, nil, nil
 
-	return err;
 }
 
-func (model *Model) deleteSearch() error {
-	index, err := search.Open(model.entityName);
+// adds the model to the index
+func searchPut(ctx context.Context, model *Model, name string) error {
+
+	log.Printf("Opening index with name %s", name)
+	index, err := search.Open(name)
 	if nil != err {
-		panic(err);
+		panic(err)
+		return err
 	}
 
-	return index.Delete(model.context, model.key.Encode());
+	_, err = index.Put(ctx, model.EncodedKey(), &searchable{Model:model})
+
+	if err != nil {
+		panic(err)
+	}
+
+	return err
 }
 
-func (model *Model) Clean() (int, error) {
-	index, err := search.Open(model.entityName);
+func searchDelete(ctx context.Context, model Model, name string) error {
+	index, err := search.Open(name)
 	if nil != err {
-		return 0, err;
-	}
-	opts := &search.ListOptions{};
-	opts.IDsOnly = true;
-
-	cleaner, _ := NewModel(model.context, model.Prototype());
-	count := 0;
-	for it := index.List(model.context, opts); ; {
-		k, e := it.Next(nil);
-
-		if e == search.Done {
-			break;
-		}
-
-		key, err := datastore.DecodeKey(k);
-
-		if err != nil {
-			return count, errors.New("Can't deliver search result. Keys do not match! - " + k);
-		}
-
-		cleaner.key = key;
-
-		e = datastore.Get(cleaner.context, cleaner.key, cleaner.dataMap);
-
-		if e != nil {
-			//if we can't read the item, we delete the index
-			count ++;
-			index.Delete(model.context, k);
-			log.Infof(model.context, "Removed stale index");
-		}
+		return nil
 	}
 
-	return count, nil;
+	return index.Delete(ctx, model.EncodedKey())
 }
 
 
 //stays at nil -> ignores the struct datas and gets a key only query from datastore
 //which will load the struct with Read()
-func (model *Model) Load(fields []search.Field, meta *search.DocumentMetadata) error {
-	return nil;
+func (model *searchable) Load(fields []search.Field, meta *search.DocumentMetadata) error {
+	return nil
 }
 
-func (model *Model) SearchWith(query string) {
-	model.searchQuery += query;
+type searchQuery struct {
+	name string
+	mType reflect.Type
+	query bytes.Buffer
+}
+
+func NewSearchQuery(m modelable) *searchQuery {
+	t := reflect.TypeOf(m).Elem()
+	name := t.Name()
+	return &searchQuery{mType:t, name:name}
+}
+
+func NewSearchQueryWithName(m modelable, name string) *searchQuery {
+	t := reflect.TypeOf(m).Elem()
+	return &searchQuery{mType:t, name:name}
+}
+
+func (sq *searchQuery) SearchWith(query string) {
+	sq.query.WriteString(query)
 }
 
 //so far, op is the logical operation to use with the reference, i.e. AND, OR.
 //with reference is always an equality
-func (model *Model) SearchWithRef(ref *Model, op string) error {
+func (sq *searchQuery) SearchWithModel(field string, ref modelable, op string) error {
 
-	refName := makeRefname(ref.entityName);
-	s, ok := model.values[refName];
-	if !ok {
-		model.Dump();
-		return errors.New("No reference named " + ref.entityName + " for model " + model.Name());
+	if _, exists := sq.mType.FieldByName(field); !exists {
+		return errors.New(fmt.Sprintf("struct of type %s has no field named %s", sq.mType.Name(), field))
 	}
-	pval := reflect.ValueOf(model.Prototype()).Elem();
-	fieldName := pval.Type().Field(s.index).Name;
 
 	if op != "" {
-		op = strings.TrimSpace(op);
-		model.searchQuery += " " + op + " ";
+		op = strings.TrimSpace(op)
+		sq.query.WriteString(" ")
+		sq.query.WriteString(op)
+		sq.query.WriteString(" ")
 	}
 
-	model.searchQuery += " " + fieldName + " = " + ref.key.Encode();
+	sq.query.WriteString(" ")
+	sq.query.WriteString(field)
+	sq.query.WriteString(" = ")
+	sq.query.WriteString(ref.getModel().EncodedKey())
 
-	return nil;
+	return nil
 }
 
-func (model *Model) Search(opts *search.SearchOptions) (int, []Model, error) {
+func (sq *searchQuery) Search(ctx context.Context, dst interface{}, opts *search.SearchOptions) error {
+
+	dstv := reflect.ValueOf(dst)
+
+	if !isValidContainer(dstv) {
+		return fmt.Errorf("invalid container of type %s. Container must be a modelable slice", dstv.Elem().Type().Name())
+	}
+
+	modelables := dstv.Elem()
 
 	//always do a id-only key. retrieval is demanded to model
 	if nil == opts {
-		opts = &search.SearchOptions{};
+		opts = &search.SearchOptions{}
 	}
+	opts.IDsOnly = true
 
-	opts.IDsOnly = true;
-	//see if we want to search in a reference. Empty string means we don't want to
-	mod := model;
-	var err error;
+	idx, err := search.Open(sq.name)
 
-	index, err := search.Open(mod.entityName);
+	log.Printf("Searching index with name %s", sq.name)
 
 	if err != nil {
-		panic(err);
+		panic(err)
 	}
 
-	var mods []Model;
+	query := sq.query.String()
 
-	mType := reflect.ValueOf(model.m).Elem().Type();
+	log.Printf("Query is %s", query)
 
-	query := model.searchQuery;
-	//log.Print("****** SEARCH QUERY: " + query);
-	log.Debugf(model.context, "****** SEARCH QUERY: " + query);
-	model.searchQuery = "";
+	count := 0
+	for it := idx.Search(ctx, query, opts); ; {
 
-	count := 0;
-	for it := index.Search(model.context, query, opts); ; {
+		k, e := it.Next(nil)
 
+		count++
+		log.Printf("Iterating search result. Iteration %d",count)
 
-		k, e := it.Next(nil);
-
-		count = it.Count();
 		if e == search.Done {
-			log.Debugf(model.context, "****** SEARCH FOUND: %d ITEMS", count);
-			break;
+			break
 		}
 
-		dst := reflect.New(mType);
-		val, ok := dst.Interface().(Prototype);
+		newModelable := reflect.New(sq.mType)
+		m, ok := newModelable.Interface().(modelable)
 
 		if !ok {
-			return count, nil, errors.New("Can't cast search result to prototype");
+			err = fmt.Errorf("can't cast struct of type %s to modelable", sq.mType.Name())
+			sq = nil
+			return err
 		}
 
-		m, err := NewModel(model.context, val);
+		//Note: indexing here assigns the address of m to the Model.
+		//this means that if a user supplied a populated dst we must reindex its elements before returning
+		//or the model will point to a different modelable
+		index(m)
 
-		if nil != err {
-			return count, nil, err;
-		}
-
-		key, err := datastore.DecodeKey(k);
-
+		model := m.getModel()
+		model.Key, err = datastore.DecodeKey(k)
 		if err != nil {
-			return count, nil, errors.New("Can't deliver search result. Keys do not match! - " + k);
+			// todo: handle case
+			return err
 		}
 
-		m.key = key;
-
-		e = m.read();
-
-		if e != nil {
-			return count, nil, e;
-		}
-
-		mods = append(mods, *m);
+		modelables.Set(reflect.Append(modelables, reflect.ValueOf(m)))
 	}
 
-	if len(mods) < 1 {
-		err = search.ErrNoSuchDocument;
-	}
+	return ReadMulti(ctx, reflect.Indirect(dstv).Interface())
 
-	return count, mods, err;
-
-}*/
+}

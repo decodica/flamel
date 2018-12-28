@@ -16,7 +16,6 @@ const valSeparator string = "."
 
 const tagDomain string = "model"
 const tagSkip string = "-"
-const tagSearch string = "search"
 const tagNoindex string = "noindex"
 const tagAncestor string = "ancestor"
 
@@ -28,6 +27,7 @@ type modelable interface {
 type Model struct {
 	//Note: this is necessary to allow simple implementation of memcache encoding and coding
 	//else we get the all unexported fields error from Gob package
+	searchable bool `model:"-"`
 	registered bool `model:"-"`
 
 	//represents the mapping of the modelable containing this Model
@@ -225,7 +225,7 @@ func index(m modelable) {
 			}
 
 			if tagName == tagSearch {
-				//todo
+				model.searchable = true
 			}
 
 			if obj.Field(i).Kind() == reflect.Struct {
@@ -365,11 +365,16 @@ func createWithOptions(ctx context.Context, m modelable, opts *CreateOptions) er
 	}
 
 	newKey := datastore.NewKey(ctx, model.structName, opts.stringId, opts.intId, ancKey)
-	Key, err := datastore.Put(ctx, newKey, m)
+	key, err := datastore.Put(ctx, newKey, m)
 	if err != nil {
 		return err
 	}
-	model.Key = Key
+	model.Key = key
+
+	// if the model is searchable, update the search index with the new values
+	if model.searchable {
+		searchPut(ctx, model, model.Name())
+	}
 
 	return nil
 }
@@ -426,6 +431,10 @@ func updateReference(ctx context.Context, ref *reference, Key *datastore.Key) (e
 		return err
 	}
 
+	// if the model is searchable, update the search index with the new values
+	if model.searchable {
+		searchPut(ctx, model, model.Name())
+	}
 	return nil
 }
 

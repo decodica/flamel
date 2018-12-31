@@ -46,14 +46,18 @@ type searchable struct {
 
 // maps the searchable fields of a given struct to searchable fields to ease the runtime retrieval
 func getSearchablefields(t reflect.Type) []*fieldDescriptor {
-	searchMutex.Lock()
 	// we already parsed the searchable fields of type t
+	searchMutex.Lock()
 	if descs, ok := searchableDefs[t]; ok {
+		searchMutex.Unlock()
+		log.Printf("fields of type %s already indexed", t.Name())
 		return descs
 	}
+	searchMutex.Unlock()
 
 	var descriptors []*fieldDescriptor
 
+	log.Printf("couldn't find indexed fields for type %s", t.Name())
 	for i := 0; i < t.NumField(); i++ {
 		field := t.Field(i)
 
@@ -92,8 +96,10 @@ func getSearchablefields(t reflect.Type) []*fieldDescriptor {
 			descriptors = append(descriptors, &desc)
 		}
 	}
+	searchMutex.Lock()
 	searchableDefs[t] = descriptors
 	searchMutex.Unlock()
+
 	return descriptors
 }
 
@@ -138,7 +144,6 @@ func (model *searchable) Save() ([]search.Field, *search.DocumentMetadata, error
 // adds the model to the index
 func searchPut(ctx context.Context, model *Model, name string) error {
 
-	log.Printf("Opening index with name %s", name)
 	index, err := search.Open(name)
 	if nil != err {
 		panic(err)
@@ -150,6 +155,29 @@ func searchPut(ctx context.Context, model *Model, name string) error {
 	if err != nil {
 		panic(err)
 	}
+
+	return err
+}
+
+
+func searchPutMulti(ctx context.Context, models []*Model, name string) error {
+	keys := make([]string, len(models), cap(models))
+	items := make([]interface{}, len(models), cap(models))
+	for i := range models {
+		keys[i] = models[i].EncodedKey()
+		searchable := &searchable{Model:models[i]}
+		items[i] = searchable
+	}
+
+	index, err := search.Open(name)
+
+	if err != nil {
+		panic(err)
+		recover()
+		return err
+	}
+
+	_, err = index.PutMulti(ctx, keys, items)
 
 	return err
 }

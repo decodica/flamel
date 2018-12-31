@@ -294,36 +294,6 @@ func index(m modelable) {
 	gob.Register(model.modelable)
 }
 
-//Returns true if the modelable is zero.
-func isZero(ref modelable) bool {
-	model := ref.getModel()
-	v := reflect.Indirect(reflect.ValueOf(ref))
-	for i := 0; i < v.NumField(); i++ {
-		field := v.Field(i)
-		//ft := t.Field(i);
-
-		//avoid checking models
-		if field.Type() == typeOfModel {
-			continue;
-		}
-
-		//if at least one field is valid we break the loop and we return false
-		//it can be that model.references[i] is nil because the struct has not been registered
-		if _, isRef := model.references[i];!isRef {
-			if !isZeroOfType(field.Interface()) {
-				return false
-			}
-		}
-	}
-
-	return true
-}
-
-//Returns true if i is a zero value for its type
-func isZeroOfType(i interface{}) bool {
-	return i == reflect.Zero(reflect.TypeOf(i)).Interface()
-}
-
 func createWithOptions(ctx context.Context, m modelable, opts *CreateOptions) error {
 	model := m.getModel()
 

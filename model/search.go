@@ -4,15 +4,11 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"google.golang.org/appengine/datastore"
 	"google.golang.org/appengine/search"
-	"log"
 	"reflect"
 	"strings"
 	"sync"
-
-	"errors"
-	"google.golang.org/appengine/datastore"
-	//"log"
 )
 
 //flag fields that we want to search with "prototype:search"
@@ -44,20 +40,26 @@ type searchable struct {
 	*Model
 }
 
+type searchOp string
+
+const (
+	SearchNoOp searchOp = ""
+	SearchAnd searchOp = "AND"
+	SearchOr searchOp = "OR"
+)
+
 // maps the searchable fields of a given struct to searchable fields to ease the runtime retrieval
 func getSearchablefields(t reflect.Type) []*fieldDescriptor {
 	// we already parsed the searchable fields of type t
 	searchMutex.Lock()
 	if descs, ok := searchableDefs[t]; ok {
 		searchMutex.Unlock()
-		log.Printf("fields of type %s already indexed", t.Name())
 		return descs
 	}
 	searchMutex.Unlock()
 
 	var descriptors []*fieldDescriptor
 
-	log.Printf("couldn't find indexed fields for type %s", t.Name())
 	for i := 0; i < t.NumField(); i++ {
 		field := t.Field(i)
 
@@ -72,8 +74,6 @@ func getSearchablefields(t reflect.Type) []*fieldDescriptor {
 			desc.index = i
 			desc.name = field.Name
 
-			log.Printf("reading field %s of kind %v", desc.name, field.Type.Kind())
-
 			switch field.Type.Kind() {
 				case reflect.String:
 					desc.searchType = _str
@@ -82,14 +82,15 @@ func getSearchablefields(t reflect.Type) []*fieldDescriptor {
 				case reflect.Float32, reflect.Float64:
 					desc.searchType = _f64
 				case reflect.Struct:
-					// we do not refer to a modelable, so it is not searchable
 					switch field.Type {
 					case typeOfTime:
 						desc.searchType = _time
-					case typeOfModelable:
-						desc.searchType = _key
 					case typeOfGeoPoint:
 						desc.searchType = _geopoint
+					default:
+						if reflect.PtrTo(field.Type).Implements(typeOfModelable) {
+							desc.searchType = _key
+						}
 					}
 			}
 
@@ -146,15 +147,10 @@ func searchPut(ctx context.Context, model *Model, name string) error {
 
 	index, err := search.Open(name)
 	if nil != err {
-		panic(err)
 		return err
 	}
 
 	_, err = index.Put(ctx, model.EncodedKey(), &searchable{Model:model})
-
-	if err != nil {
-		panic(err)
-	}
 
 	return err
 }
@@ -221,25 +217,17 @@ func (sq *searchQuery) SearchWith(query string) {
 
 //so far, op is the logical operation to use with the reference, i.e. AND, OR.
 //with reference is always an equality
-func (sq *searchQuery) SearchWithModel(field string, ref modelable, op string) error {
+func (sq *searchQuery) SearchWithModel(field string, ref modelable, op searchOp) {
 
-	if _, exists := sq.mType.FieldByName(field); !exists {
-		return errors.New(fmt.Sprintf("struct of type %s has no field named %s", sq.mType.Name(), field))
-	}
-
-	if op != "" {
-		op = strings.TrimSpace(op)
+	// we have at least one query, append the operation to it
+	if sq.query.Len() != 0 && op != SearchNoOp {
 		sq.query.WriteString(" ")
-		sq.query.WriteString(op)
+		sq.query.WriteString(string(op))
 		sq.query.WriteString(" ")
 	}
 
-	sq.query.WriteString(" ")
 	sq.query.WriteString(field)
-	sq.query.WriteString(" = ")
 	sq.query.WriteString(ref.getModel().EncodedKey())
-
-	return nil
 }
 
 func (sq *searchQuery) Search(ctx context.Context, dst interface{}, opts *search.SearchOptions) error {
@@ -260,15 +248,11 @@ func (sq *searchQuery) Search(ctx context.Context, dst interface{}, opts *search
 
 	idx, err := search.Open(sq.name)
 
-	log.Printf("Searching index with name %s", sq.name)
-
 	if err != nil {
 		panic(err)
 	}
 
 	query := sq.query.String()
-
-	log.Printf("Query is %s", query)
 
 	count := 0
 	for it := idx.Search(ctx, query, opts); ; {
@@ -276,7 +260,6 @@ func (sq *searchQuery) Search(ctx context.Context, dst interface{}, opts *search
 		k, e := it.Next(nil)
 
 		count++
-		log.Printf("Iterating search result. Iteration %d",count)
 
 		if e == search.Done {
 			break

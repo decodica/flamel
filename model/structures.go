@@ -206,10 +206,10 @@ func encodeStruct(s interface{}, props *[]datastore.Property, multiple bool, cod
 								encodeStruct(v.Addr().Interface(), props, p.Multiple, val.childStruct)
 								continue
 							}
-							return fmt.Errorf("Struct %s is not a field of codec %+v", p.Name, codec)
+							return fmt.Errorf("struct %s is not a field of codec %+v", p.Name, codec)
 						}
 						//if struct, recursively call itself until an error is found
-						return fmt.Errorf("FieldName % s not found in %v for Entity of type %s", p.Name, codec.fieldNames, sType)
+						return fmt.Errorf("FieldName %s not found in %v for Entity of type %s", p.Name, codec.fieldNames, sType)
 				}
 		}
 		*props = append(*props, *p)
@@ -326,7 +326,7 @@ func decodeField(field reflect.Value, p datastore.Property) error {
 	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
 		x, ok := p.Value.(int64)
 		if !ok && p.Value != nil {
-			return errors.New("Error 1")
+			return errors.New("error 1")
 		}
 		if field.OverflowInt(x) {
 			return fmt.Errorf("value %v overflows struct field of type %v", x, field.Type())
@@ -335,7 +335,7 @@ func decodeField(field reflect.Value, p datastore.Property) error {
 	case reflect.Bool:
 		x, ok := p.Value.(bool)
 		if !ok && p.Value != nil {
-			return errors.New("Error 2")
+			return errors.New("error 2")
 		}
 		field.SetBool(x)
 	case reflect.String:
@@ -348,13 +348,13 @@ func decodeField(field reflect.Value, p datastore.Property) error {
 			field.SetString(x)
 		default:
 			if p.Value != nil {
-				return errors.New("Error 3")
+				return errors.New("error 3")
 			}
 		}
 	case reflect.Float32, reflect.Float64:
 		x, ok := p.Value.(float64)
 		if !ok && p.Value != nil {
-			return errors.New("Error 4")
+			return errors.New("error 4")
 		}
 		if field.OverflowFloat(x) {
 			return fmt.Errorf("value %v overflows struct field of type %v", x, field.Type())
@@ -414,13 +414,6 @@ func childName(fullName string) string {
 	}
 	return fullName
 }
-
-//returns the name one level above,
-//for example Parent.Child.Granchild -> Parent.Child
-/*func aboveName(fullName string) string {
-
-}*/
-
 
 func toPropertyList(modelable modelable) ([]datastore.Property, error) {
 	value := reflect.ValueOf(modelable).Elem()

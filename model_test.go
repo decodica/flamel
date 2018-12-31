@@ -30,6 +30,12 @@ type TestModel struct {
 	model.Model
 	Name string `model:"search"`
 	Age int `model:"search"`
+	Job Job `model:"search"`
+}
+
+type Job struct {
+	model.Model
+	Name string
 }
 
 //controller
@@ -37,14 +43,27 @@ type createController struct {
 	t *testing.T
 }
 
+var count = 0
 func (controller *createController) Process(ctx context.Context, out *ResponseOutput) Redirect {
 
-	count := 0
+	rigattiere := Job{Name:"Rigattiere"}
+	spazzino := Job{Name:"Spazzino"}
+
+	model.Create(ctx, &rigattiere)
+	model.Create(ctx, &spazzino)
+
 	for i := 0; i < iterations; i++ {
 		m := TestModel{}
 		idx := rand.Intn(len(names))
 		m.Name = names[idx]
 		m.Age = rand.Intn(70) + 18
+
+		if m.Name == "Enzo" {
+			m.Job = rigattiere
+		} else {
+			m.Job = spazzino
+		}
+
 		err := model.Create(ctx, &m)
 		if err != nil {
 			controller.t.Fatalf("error creating entities %v", err)
@@ -74,7 +93,7 @@ func (controller *searchController) Process(ctx context.Context, out *ResponseOu
 	sq := model.NewSearchQuery((*TestModel)(nil))
 	sq.SearchWith("Name = Enzo")
 
-	results := []*TestModel{}
+	results := make([]*TestModel, 0, 0)
 
 	err := sq.Search(ctx, &results, nil)
 
@@ -82,7 +101,47 @@ func (controller *searchController) Process(ctx context.Context, out *ResponseOu
 		controller.t.Fatalf("error searching Enzos: %v", err)
 	}
 
-	controller.t.Logf("found %d Enzos", len(results))
+	if len(results) != count {
+		controller.t.Fatalf("created %d Enzos, but we found %d by name", count, len(results))
+	}
+
+	for _, enzo := range results {
+		if enzo.Job.Name != "Rigattiere" {
+			controller.t.Fatalf("enzo has an invalid job: %s", enzo.Job.Name)
+		}
+	}
+
+	// now we search by jobs
+
+	results = make([]*TestModel, 0, 0)
+	rigattiere := Job{}
+	query := model.NewQuery(&rigattiere)
+	query.WithField("Name =", "Rigattiere")
+	err = query.First(ctx, &rigattiere)
+
+	if err != nil {
+		controller.t.Fatalf("error retrieving rigattiere: %s", err.Error())
+	}
+
+	sq = model.NewSearchQuery((*TestModel)(nil))
+	sq.SearchWithModel("Job =", &rigattiere, model.SearchNoOp)
+	err = sq.Search(ctx, &results, nil)
+
+	if err != nil {
+		controller.t.Fatalf("error retrieving Enzos by job: %v", err)
+	}
+
+
+	if len(results) != count {
+		controller.t.Fatalf("created %d Enzos, but we found %d enzos by job", count, len(results))
+	}
+
+	for _, enzo := range results {
+		if enzo.Job.Name != "Rigattiere" {
+			controller.t.Fatalf("enzo has an invalid job: %s", enzo.Job.Name)
+		}
+	}
+
 
 	return Redirect{Status: http.StatusOK}
 }

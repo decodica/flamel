@@ -95,7 +95,7 @@ func (controller *searchController) Process(ctx context.Context, out *ResponseOu
 
 	results := make([]*TestModel, 0, 0)
 
-	err := sq.Search(ctx, &results, nil)
+	_, err := sq.Search(ctx, &results, nil)
 
 	if err != nil {
 		controller.t.Fatalf("error searching Enzos: %v", err)
@@ -125,7 +125,7 @@ func (controller *searchController) Process(ctx context.Context, out *ResponseOu
 
 	sq = model.NewSearchQuery((*TestModel)(nil))
 	sq.SearchWithModel("Job =", &rigattiere, model.SearchNoOp)
-	err = sq.Search(ctx, &results, nil)
+	_, err = sq.Search(ctx, &results, nil)
 
 	if err != nil {
 		controller.t.Fatalf("error retrieving Enzos by job: %v", err)

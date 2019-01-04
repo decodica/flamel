@@ -230,12 +230,12 @@ func (sq *searchQuery) SearchWithModel(field string, ref modelable, op searchOp)
 	sq.query.WriteString(ref.getModel().EncodedKey())
 }
 
-func (sq *searchQuery) Search(ctx context.Context, dst interface{}, opts *search.SearchOptions) error {
+func (sq *searchQuery) Search(ctx context.Context, dst interface{}, opts *search.SearchOptions) (int, error) {
 
 	dstv := reflect.ValueOf(dst)
 
 	if !isValidContainer(dstv) {
-		return fmt.Errorf("invalid container of type %s. Container must be a modelable slice", dstv.Elem().Type().Name())
+		return 0, fmt.Errorf("invalid container of type %s. Container must be a modelable slice", dstv.Elem().Type().Name())
 	}
 
 	modelables := dstv.Elem()
@@ -255,11 +255,10 @@ func (sq *searchQuery) Search(ctx context.Context, dst interface{}, opts *search
 	query := sq.query.String()
 
 	count := 0
+
 	for it := idx.Search(ctx, query, opts); ; {
-
+		count = it.Count()
 		k, e := it.Next(nil)
-
-		count++
 
 		if e == search.Done {
 			break
@@ -271,7 +270,7 @@ func (sq *searchQuery) Search(ctx context.Context, dst interface{}, opts *search
 		if !ok {
 			err = fmt.Errorf("can't cast struct of type %s to modelable", sq.mType.Name())
 			sq = nil
-			return err
+			return count, err
 		}
 
 		//Note: indexing here assigns the address of m to the Model.
@@ -283,12 +282,12 @@ func (sq *searchQuery) Search(ctx context.Context, dst interface{}, opts *search
 		model.Key, err = datastore.DecodeKey(k)
 		if err != nil {
 			// todo: handle case
-			return err
+			return count, err
 		}
 
 		modelables.Set(reflect.Append(modelables, reflect.ValueOf(m)))
 	}
 
-	return ReadMulti(ctx, reflect.Indirect(dstv).Interface())
+	return count, ReadMulti(ctx, reflect.Indirect(dstv).Interface())
 
 }

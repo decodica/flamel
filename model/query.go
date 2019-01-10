@@ -36,23 +36,23 @@ func NewQuery(m modelable) *Query {
 /**
 Filter functions
  */
-func (q *Query) WithModelable(field string, ref modelable) (*Query, error) {
+func (q *Query) WithModelable(field string, ref modelable) *Query {
 	refm := ref.getModel()
 	if !refm.registered {
-		return nil, fmt.Errorf("modelable reference is not registered %+v", ref)
+		panic(fmt.Errorf("modelable reference is not registered %+v", ref))
 	}
 
 	if refm.Key == nil {
-		return nil, errors.New("reference Key has not been set. Can't retrieve it from datastore")
+		panic(errors.New("reference Key has not been set. Can't retrieve it from datastore"))
 	}
 
 	if _, ok := q.mType.FieldByName(field); !ok {
-		return nil, fmt.Errorf("struct of type %s has no field with name %s", q.mType.Name(), field)
+		panic(fmt.Errorf("struct of type %s has no field with name %s", q.mType.Name(), field))
 	}
 
-	refName := referenceName(q.mType.Name(), field)
+	refName := referenceName("", field)
 
-	return q.WithField(fmt.Sprintf("%s = ", refName), refm.Key), nil
+	return q.WithField(fmt.Sprintf("%s = ", refName), refm.Key)
 }
 
 func (q *Query) WithAncestor(ancestor modelable) (*Query, error) {
@@ -113,7 +113,7 @@ func (q *Query) Distinct(fields ...string) * Query {
 func (q *Query) First(ctx context.Context, m modelable) (err error) {
 	q.dq = q.dq.Limit(1)
 
-	mm := []modelable{}
+	var mm []modelable
 
 	err = q.GetAll(ctx, &mm)
 

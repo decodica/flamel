@@ -43,12 +43,12 @@ type Params []Param
 //Route class
 type Route struct {
 	Name      string
-	Handler func(ctx context.Context) interface{}
+	Handler func(ctx context.Context) (interface{}, context.Context)
 	// factory   func() Controller
 	routeType routeType
 }
 
-func NewRoute(url string, handler func(ctx context.Context) interface{}) Route {
+func NewRoute(url string, handler func(ctx context.Context) (interface{}, context.Context)) Route {
 	//analyze the name to determine the route type
 	route := Route{Handler: handler}
 
@@ -94,7 +94,7 @@ func NewRouter() Router {
 	return router
 }
 
-func (router *Router) SetRoute(path string, handler func(ctx context.Context) interface{}) {
+func (router *Router) SetRoute(path string, handler func(ctx context.Context) (interface{}, context.Context)) {
 	route := NewRoute(path, handler)
 	router.tree.insert(&route)
 }
@@ -107,6 +107,6 @@ func (router *Router) RouteForPath(ctx context.Context, path string) (context.Co
 	}
 
 	c := context.WithValue(ctx, RoutingParamsKey, params)
-	controller := route.Handler(c)
+	controller, c := route.Handler(c)
 	return c, nil, controller
 }

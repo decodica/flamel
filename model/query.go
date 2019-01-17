@@ -1,11 +1,11 @@
 package model
 
 import (
-	"google.golang.org/appengine/datastore"
-	"golang.org/x/net/context"
-	"reflect"
-	"fmt"
 	"errors"
+	"fmt"
+	"golang.org/x/net/context"
+	"google.golang.org/appengine/datastore"
+	"reflect"
 )
 
 type Query struct {
@@ -50,9 +50,7 @@ func (q *Query) WithModelable(field string, ref modelable) *Query {
 		panic(fmt.Errorf("struct of type %s has no field with name %s", q.mType.Name(), field))
 	}
 
-	refName := referenceName("", field)
-
-	return q.WithField(fmt.Sprintf("%s = ", refName), refm.Key)
+	return q.WithField(fmt.Sprintf("%s = ", field), refm.Key)
 }
 
 func (q *Query) WithAncestor(ancestor modelable) (*Query, error) {

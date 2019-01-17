@@ -20,7 +20,7 @@ import (
 
 type mage struct {
 	Config
-	app Application
+	app        Application
 	bufferPool *sync.Pool
 }
 

@@ -78,7 +78,7 @@ func mapStructureLocked(t reflect.Type, s *encodedStruct, parentName string) {
 			continue
 		}
 
-		sName := referenceName(parentName, field.Name)
+		sName := field.Name
 		sValue := encodedField{index:i}
 		switch fType.Kind() {
 			case reflect.Map:
@@ -143,7 +143,6 @@ func mapStructureLocked(t reflect.Type, s *encodedStruct, parentName string) {
 }
 
 func encodeStruct(s interface{}, props *[]datastore.Property, multiple bool, codec *encodedStruct) error {
-	name := codec.structName
 	value := reflect.ValueOf(s).Elem()
 	sType := value.Type()
 
@@ -151,7 +150,7 @@ func encodeStruct(s interface{}, props *[]datastore.Property, multiple bool, cod
 		field := sType.Field(i)
 
 		if field.Tag.Get("datastore") == "-" {
-			continue;
+			continue
 		}
 
 		v := value.FieldByName(field.Name)
@@ -162,7 +161,7 @@ func encodeStruct(s interface{}, props *[]datastore.Property, multiple bool, cod
 			p.NoIndex = true
 		}
 
-		p.Name = referenceName(name, field.Name)
+		p.Name = field.Name
 		switch x := v.Interface().(type) {
 			case time.Time:
 				p.Value = x
@@ -375,15 +374,6 @@ func decodeField(field reflect.Value, p datastore.Property) error {
 	return nil
 }
 
-//returns the name of a reference
-func referenceName(parentName string, refName string) string {
-	if parentName == "" {
-		return refName
-	}
-	return parentName + "." + refName
-}
-
-
 func entityPropName(entityName string, fieldName string) string {
 	return fieldName
 	//return fmt.Sprintf("%s.%s", entityName, fieldName);
@@ -446,7 +436,7 @@ func toPropertyList(modelable modelable) ([]datastore.Property, error) {
 			p.NoIndex = true
 		}
 
-		p.Name = referenceName("", field.Name)
+		p.Name = field.Name
 
 		if rm, ok := model.references[i]; ok {
 			ref := rm.Modelable.getModel()

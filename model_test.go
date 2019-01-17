@@ -29,8 +29,8 @@ const iterations = 100
 type TestModel struct {
 	model.Model
 	Name string `model:"search"`
-	Age int `model:"search"`
-	Job Job `model:"search"`
+	Age  int    `model:"search"`
+	Job  Job    `model:"search"`
 }
 
 type Job struct {
@@ -44,10 +44,11 @@ type createController struct {
 }
 
 var count = 0
+
 func (controller *createController) Process(ctx context.Context, out *ResponseOutput) Redirect {
 
-	rigattiere := Job{Name:"Rigattiere"}
-	spazzino := Job{Name:"Spazzino"}
+	rigattiere := Job{Name: "Rigattiere"}
+	spazzino := Job{Name: "Spazzino"}
 
 	model.Create(ctx, &rigattiere)
 	model.Create(ctx, &spazzino)
@@ -81,7 +82,6 @@ func (controller *createController) Process(ctx context.Context, out *ResponseOu
 func (controller *createController) OnDestroy(ctx context.Context) {
 
 }
-
 
 // search controller
 type searchController struct {
@@ -131,7 +131,6 @@ func (controller *searchController) Process(ctx context.Context, out *ResponseOu
 		controller.t.Fatalf("error retrieving Enzos by job: %v", err)
 	}
 
-
 	if len(results) != count {
 		controller.t.Fatalf("created %d Enzos, but we found %d enzos by job", count, len(results))
 	}
@@ -141,7 +140,6 @@ func (controller *searchController) Process(ctx context.Context, out *ResponseOu
 			controller.t.Fatalf("enzo has an invalid job: %s", enzo.Job.Name)
 		}
 	}
-
 
 	return Redirect{Status: http.StatusOK}
 }
@@ -164,8 +162,8 @@ func TestModel_Run(t *testing.T) {
 
 	//set up mage
 	m := Instance()
-	m.SetRoute("/create", func(ctx context.Context) Controller { return &createController{t:t} }, nil)
-	m.SetRoute("/search", func(ctx context.Context) Controller { return &searchController{t:t} }, nil)
+	m.SetRoute("/create", func(ctx context.Context) Controller { return &createController{t: t} }, nil)
+	m.SetRoute("/search", func(ctx context.Context) Controller { return &searchController{t: t} }, nil)
 
 	app := &appTest{}
 

@@ -22,6 +22,7 @@ var names = []string{
 	"Gualtiero",
 	"Nevio",
 	"Ignazio",
+	"Siro",
 }
 
 const iterations = 100
@@ -50,8 +51,17 @@ func (controller *createController) Process(ctx context.Context, out *ResponseOu
 	rigattiere := Job{Name: "Rigattiere"}
 	spazzino := Job{Name: "Spazzino"}
 
-	model.Create(ctx, &rigattiere)
-	model.Create(ctx, &spazzino)
+	err := model.Create(ctx, &rigattiere)
+
+	if err != nil {
+		controller.t.Fatalf("error creating rigattiere %s", err.Error())
+	}
+
+	err = model.Create(ctx, &spazzino)
+
+	if err != nil {
+		controller.t.Fatalf("error creating spazzino %s", err.Error())
+	}
 
 	for i := 0; i < iterations; i++ {
 		m := TestModel{}

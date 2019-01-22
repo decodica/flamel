@@ -379,11 +379,5 @@ func (mage mage) parseRequestInputs(ctx context.Context, req *http.Request) (con
 		reqValues[c.Name] = i
 	}
 
-	// add url params to the response
-	params := RoutingParams(ctx)
-	for k, v := range params {
-		reqValues[k] = v
-	}
-
 	return context.WithValue(ctx, KeyRequestInputs, reqValues), nil
 }

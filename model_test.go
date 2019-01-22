@@ -1,208 +1,225 @@
 package mage
 
 import (
+	"context"
 	"distudio.com/mage/model"
-	"golang.org/x/net/context"
+	"fmt"
 	"google.golang.org/appengine/aetest"
-	"math/rand"
+	"google.golang.org/appengine/memcache"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 	"time"
 )
 
-var names = []string{
-	"Mario",
-	"Antonio",
-	"Giuseppe",
-	"Kevin",
-	"Giraudo",
-	"Bernardo",
-	"Enzo",
-	"Gualtiero",
-	"Nevio",
-	"Ignazio",
-}
 
-const iterations = 100
+const name = "EntityName"
+const age int = 50
 
-type TestModel struct {
+type TestEntity struct {
 	model.Model
-	Name string `model:"search"`
-	Age int `model:"search"`
-	Job Job `model:"search"`
+	Name string
+	Child TestChild
+	Nocreate TestNocreate
 }
 
-type Job struct {
+type TestChild struct {
 	model.Model
 	Name string
 }
 
-//controller
+type TestNocreate struct {
+	Num int
+}
+
+type testController struct {
+	t *testing.T
+}
+
+func (controller *testController) OnDestroy(ctx context.Context) {}
+
+// creates the testentity
 type createController struct {
-	t *testing.T
+	*testController
 }
 
-var count = 0
 func (controller *createController) Process(ctx context.Context, out *ResponseOutput) Redirect {
+	entity := TestEntity{}
+	entity.Name = name
+	entity.Child.Name = "ChildName"
+	err := model.Create(ctx, &entity)
+	if err != nil {
+		msg := fmt.Sprintf("error creating entity: %s", err.Error())
+		controller.t.Log(msg)
+		return Redirect{Status: http.StatusInternalServerError}
+	}
 
-	rigattiere := Job{Name:"Rigattiere"}
-	spazzino := Job{Name:"Spazzino"}
+	err = memcache.Flush(ctx)
+	if err != nil {
+		return Redirect{Status: http.StatusInternalServerError}
+	}
+	return Redirect{Status: http.StatusOK}
+}
 
-	model.Create(ctx, &rigattiere)
-	model.Create(ctx, &spazzino)
 
-	for i := 0; i < iterations; i++ {
-		m := TestModel{}
-		idx := rand.Intn(len(names))
-		m.Name = names[idx]
-		m.Age = rand.Intn(70) + 18
+// updates the testentity
+type updateController struct {
+	*testController
+}
 
-		if m.Name == "Enzo" {
-			m.Job = rigattiere
-		} else {
-			m.Job = spazzino
-		}
+func (controller *updateController) Process(ctx context.Context, out *ResponseOutput) Redirect {
+	te := TestEntity{}
+	q := model.NewQuery(&te)
+	q = q.WithField("Name =", name)
+	err := q.First(ctx, &te)
+	if err != nil {
+		msg := fmt.Sprintf("error retrieving entity with name = %s: %s", name, err.Error())
+		controller.t.Log(msg)
+		return Redirect{Status:http.StatusInternalServerError}
+	}
 
-		err := model.Create(ctx, &m)
+	te.Child.Name = "UpdatedName"
+	te.Nocreate.Num = age
+
+	err = model.Update(ctx, &te)
+	if err != nil {
+		msg := fmt.Sprintf("error updating entity: %s", err.Error())
+		controller.t.Log(msg)
+		return Redirect{Status:http.StatusInternalServerError}
+	}
+
+	err = memcache.Flush(ctx)
+	if err != nil {
+		return Redirect{Status:http.StatusInternalServerError}
+	}
+
+	return Redirect{Status: http.StatusOK}
+}
+
+// reads the test entity
+type readController struct {
+	*testController
+}
+
+func (controller *readController) Process(ctx context.Context, out *ResponseOutput) Redirect {
+	ins := RoutingParams(ctx)
+	arg, ok := ins["type"]
+	if !ok {
+		msg := fmt.Sprintf("wrong inputs: %+v", ins)
+		controller.t.Log(msg)
+		return Redirect{Status:http.StatusBadRequest}
+	}
+
+	switch arg.Value() {
+	case "name":
+		te := TestEntity{}
+		q := model.NewQuery(&te)
+		q = q.WithField("Name = ", name)
+		err := q.First(ctx, &te)
 		if err != nil {
-			controller.t.Fatalf("error creating entities %v", err)
+			msg := fmt.Sprintf("error creating testEntity: %s", err)
+			controller.t.Log(msg)
+			return Redirect{Status:http.StatusInternalServerError}
 		}
 
-		if m.Name == "Enzo" {
-			count++
+		if te.Name != name {
+			msg := fmt.Sprintf("entity name is different from %s", name)
+			controller.t.Log(msg)
+			return Redirect{Status:http.StatusExpectationFailed}
+		}
+	// call this to check if the update was successful
+	case "age":
+		te := TestEntity{}
+		q := model.NewQuery(&te)
+		q = q.WithField("Name = ", name)
+		err := q.First(ctx, &te)
+		if err != nil {
+			msg := fmt.Sprintf("error creating testEntity: %s", err)
+			controller.t.Log(msg)
+			return Redirect{Status:http.StatusInternalServerError}
+		}
+
+		if te.Nocreate.Num != age {
+			msg := fmt.Sprintf("nocreate num is different from %s", name)
+			controller.t.Log(msg)
+			return Redirect{Status:http.StatusExpectationFailed}
 		}
 	}
 
-	controller.t.Logf("Created %d Enzos", count)
+	err := memcache.Flush(ctx)
+	if err != nil {
+		return Redirect{Status:http.StatusInternalServerError}
+	}
 	return Redirect{Status: http.StatusOK}
 }
 
-func (controller *createController) OnDestroy(ctx context.Context) {
-
-}
 
 
-// search controller
-type searchController struct {
-	t *testing.T
-}
-
-func (controller *searchController) Process(ctx context.Context, out *ResponseOutput) Redirect {
-
-	sq := model.NewSearchQuery((*TestModel)(nil))
-	sq.SearchWith("Name = Enzo")
-
-	results := make([]*TestModel, 0, 0)
-
-	err := sq.Search(ctx, &results, nil)
-
-	if err != nil {
-		controller.t.Fatalf("error searching Enzos: %v", err)
-	}
-
-	if len(results) != count {
-		controller.t.Fatalf("created %d Enzos, but we found %d by name", count, len(results))
-	}
-
-	for _, enzo := range results {
-		if enzo.Job.Name != "Rigattiere" {
-			controller.t.Fatalf("enzo has an invalid job: %s", enzo.Job.Name)
-		}
-	}
-
-	// now we search by jobs
-
-	results = make([]*TestModel, 0, 0)
-	rigattiere := Job{}
-	query := model.NewQuery(&rigattiere)
-	query.WithField("Name =", "Rigattiere")
-	err = query.First(ctx, &rigattiere)
-
-	if err != nil {
-		controller.t.Fatalf("error retrieving rigattiere: %s", err.Error())
-	}
-
-	sq = model.NewSearchQuery((*TestModel)(nil))
-	sq.SearchWithModel("Job =", &rigattiere, model.SearchNoOp)
-	err = sq.Search(ctx, &results, nil)
-
-	if err != nil {
-		controller.t.Fatalf("error retrieving Enzos by job: %v", err)
-	}
-
-
-	if len(results) != count {
-		controller.t.Fatalf("created %d Enzos, but we found %d enzos by job", count, len(results))
-	}
-
-	for _, enzo := range results {
-		if enzo.Job.Name != "Rigattiere" {
-			controller.t.Fatalf("enzo has an invalid job: %s", enzo.Job.Name)
-		}
-	}
-
-
-	return Redirect{Status: http.StatusOK}
-}
-
-func (controller *searchController) OnDestroy(ctx context.Context) {
-
-}
 
 func TestModel_Run(t *testing.T) {
 
 	t.Log("*** TEST STARTED ***")
-
 	opts := aetest.Options{}
 	instance, err := aetest.NewInstance(&opts)
-
 	if err != nil {
-		t.Fatalf("Error creating instance %v", err)
+		t.Fatalf("error creating ae instance: %s", err.Error())
 	}
 	defer instance.Close()
 
-	//set up mage
 	m := Instance()
-	m.SetRoute("/create", func(ctx context.Context) Controller { return &createController{t:t} }, nil)
-	m.SetRoute("/search", func(ctx context.Context) Controller { return &searchController{t:t} }, nil)
-
 	app := &appTest{}
-
 	m.LaunchApp(app)
 
-	req, err := instance.NewRequest(http.MethodGet, "/create", nil)
+	m.SetRoute("/create", func(ctx context.Context) Controller {
+		tc := testController{t:t}
+		return &createController{testController:&tc}
+	}, nil)
 
-	if err != nil {
-		t.Fatalf("Error creating request %v", err)
-	}
-	recorder := httptest.NewRecorder()
-	m.Run(recorder, req)
+	m.SetRoute("/update", func(ctx context.Context) Controller {
+		tc := testController{t:t}
+		return &updateController{testController:&tc}
+	}, nil)
 
-	if recorder.Code >= http.StatusBadRequest {
-		t.Fatalf("Received status %d with body %s", recorder.Code, string(recorder.Body.Bytes()))
-	}
+	m.SetRoute("/read/:type", func(ctx context.Context) Controller {
+		params := RoutingParams(ctx)
+		for k, v := range params {
+			msg := fmt.Sprintf("param %s -> %v", k, v)
+			t.Log(msg)
+		}
+		tc := testController{t:t}
+		return &readController{testController:&tc}
+	}, nil)
 
-	t.Logf("Recorder status %d. Body is %s", recorder.Code, string(recorder.Body.Bytes()))
 
-	// wait for results to be written, then run searches against the model set
-	t.Logf("Sleeping for 3 seconds...")
+	tryRequest(t, instance, "/create")
+	// sleep before making the second request so datastore syncronizes
 	time.Sleep(3 * time.Second)
-	t.Logf("Done sleeping...")
 
-	// run searches
-	req, err = instance.NewRequest(http.MethodGet, "/search", nil)
+	// read the datastore and verify consistency
+	tryRequest(t, instance, "/read/name")
+	time.Sleep(3 * time.Second)
 
+	// update the datastore
+	tryRequest(t, instance, "/update")
+	time.Sleep(3 * time.Second)
+
+	tryRequest(t, instance, "/read/age")
+	time.Sleep(3 * time.Second)
+}
+
+func tryRequest(t *testing.T, instance aetest.Instance, endpoint string) {
+	req, err := instance.NewRequest(http.MethodGet, endpoint, nil )
 	if err != nil {
-		t.Fatalf("Error creating request %v", err)
+		t.Fatalf("error creating %q request: %s", endpoint, err.Error())
 	}
-	recorder = httptest.NewRecorder()
-	m.Run(recorder, req)
+
+	recorder := httptest.NewRecorder()
+	Instance().Run(recorder, req)
 
 	if recorder.Code >= http.StatusBadRequest {
-		t.Fatalf("Received status %d with body %s", recorder.Code, string(recorder.Body.Bytes()))
+		t.Fatalf("received bad status %d. Body is %q", recorder.Code, string(recorder.Body.Bytes()))
 	}
 
-	t.Logf("Recorder status %d. Body is %s", recorder.Code, string(recorder.Body.Bytes()))
-
+	t.Logf("'read request: %s", string(recorder.Body.Bytes()))
+	recorder.Flush()
 }

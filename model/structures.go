@@ -13,9 +13,9 @@ import (
 
 //Define special reflect.Type
 var (
-	typeOfGeoPoint = reflect.TypeOf(appengine.GeoPoint{})
-	typeOfTime = reflect.TypeOf(time.Time{})
-	typeOfModel = reflect.TypeOf(Model{})
+	typeOfGeoPoint  = reflect.TypeOf(appengine.GeoPoint{})
+	typeOfTime      = reflect.TypeOf(time.Time{})
+	typeOfModel     = reflect.TypeOf(Model{})
 	typeOfModelable = reflect.TypeOf((*modelable)(nil)).Elem()
 	typeOfStructure = reflect.TypeOf(structure{})
 )
@@ -24,9 +24,9 @@ var (
 //fieldIndex is the index of the struct
 //if isReference is true, the struct must be considered as a separate model
 type encodedField struct {
-	index int
+	index       int
 	childStruct *encodedStruct
-	tag string
+	tag         string
 }
 
 type encodedStruct struct {
@@ -36,7 +36,7 @@ type encodedStruct struct {
 
 func newEncodedStruct() *encodedStruct {
 	mp := make(map[string]encodedField)
-	return &encodedStruct{"",mp}
+	return &encodedStruct{"", mp}
 }
 
 //Keeps track of encoded structs according to their reflect.Type.
@@ -49,6 +49,7 @@ func mapStructure(t reflect.Type, s *encodedStruct, parentName string) {
 	mapStructureLocked(t, s, parentName)
 	encodedStructsMutex.Unlock()
 }
+
 //maps a structure into a linked list representation of its fields.
 //It is used to ease the conversion between the Model framework and the datastore
 func mapStructureLocked(t reflect.Type, s *encodedStruct, parentName string) {
@@ -78,63 +79,64 @@ func mapStructureLocked(t reflect.Type, s *encodedStruct, parentName string) {
 			continue
 		}
 
-		sName := referenceName(parentName, field.Name)
-		sValue := encodedField{index:i}
+
+		sName := field.Name
+		sValue := encodedField{index: i}
 		switch fType.Kind() {
-			case reflect.Map:
+		case reflect.Map:
 			fallthrough
-			case reflect.Array:
+		case reflect.Array:
 			continue
-			case reflect.Slice:
-				//todo: validate supported slices
-				//notifica a GAE che è uno slice usando property.multiple in save/load
-				//pensare a come rappresentare nella mappa uno slice.
-				//todo::if here, nested slice so not supported
-				fType = field.Type.Elem()
-				if fType.Kind() != reflect.Struct {
-					break
-				}
-			fallthrough;
-			case reflect.Struct:
-				//we already mapped the struct, skip further computations
-				//else we map the other struct
-				if _, ok := encodedStructs[fType]; ok {
-					sValue.childStruct = encodedStructs[fType]
-					sValue.childStruct.structName = sName
-					break
-				}
-				//todo: add to map anyway, so that the second time we get a cached value
+		case reflect.Slice:
+			//todo: validate supported slices
+			//notifica a GAE che è uno slice usando property.multiple in save/load
+			//pensare a come rappresentare nella mappa uno slice.
+			//todo::if here, nested slice so not supported
+			fType = field.Type.Elem()
+			if fType.Kind() != reflect.Struct {
+				break
+			}
+			fallthrough
+		case reflect.Struct:
+			//we already mapped the struct, skip further computations
+			//else we map the other struct
+			if _, ok := encodedStructs[fType]; ok {
+				sValue.childStruct = encodedStructs[fType]
+				sValue.childStruct.structName = sName
+				break
+			}
+			//todo: add to map anyway, so that the second time we get a cached value
+			sMap := make(map[string]encodedField)
+			childStruct := &encodedStruct{structName: sName, fieldNames: sMap}
+			sValue.childStruct = childStruct
+			if reflect.PtrTo(fType).Implements(typeOfModelable) {
+				//we have a reference, so we must treat it as a root struct
+				mapStructureLocked(fType, childStruct, "")
+			} else {
+				mapStructureLocked(fType, childStruct, field.Name)
+			}
+			break
+		case reflect.Ptr:
+			//if we have a pointer we store the value it points to
+			fieldElem := fType.Elem()
+			if fieldElem.Kind() == reflect.Struct {
 				sMap := make(map[string]encodedField)
-				childStruct := &encodedStruct{structName:sName, fieldNames:sMap}
-				sValue.childStruct = childStruct;
-				if reflect.PtrTo(fType).Implements(typeOfModelable) {
-					//we have a reference, so we must treat it as a root struct
-					mapStructureLocked(fType, childStruct, "")
-				} else {
-					mapStructureLocked(fType, childStruct, field.Name)
-				}
-			break;
-			case reflect.Ptr:
-				//if we have a pointer we store the value it points to
-				fieldElem := fType.Elem()
-				if fieldElem.Kind() == reflect.Struct {
-					sMap := make(map[string]encodedField)
-					childStruct := &encodedStruct{structName:sName, fieldNames:sMap}
-					sValue.childStruct = childStruct
-					mapStructureLocked(fieldElem, childStruct, field.Name)
-					break
-				}
+				childStruct := &encodedStruct{structName: sName, fieldNames: sMap}
+				sValue.childStruct = childStruct
+				mapStructureLocked(fieldElem, childStruct, field.Name)
+				break
+			}
 			fallthrough
-			case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
 			fallthrough
-			case reflect.Bool:
+		case reflect.Bool:
 			fallthrough
-			case reflect.String:
+		case reflect.String:
 			fallthrough
-			case reflect.Float32, reflect.Float64:
+		case reflect.Float32, reflect.Float64:
 			fallthrough
-			default:
-			break;
+		default:
+			break
 		}
 
 		s.fieldNames[sName] = sValue
@@ -151,7 +153,7 @@ func encodeStruct(s interface{}, props *[]datastore.Property, multiple bool, cod
 		field := sType.Field(i)
 
 		if field.Tag.Get("datastore") == "-" {
-			continue;
+			continue
 		}
 
 		v := value.FieldByName(field.Name)
@@ -164,53 +166,53 @@ func encodeStruct(s interface{}, props *[]datastore.Property, multiple bool, cod
 
 		p.Name = referenceName(name, field.Name)
 		switch x := v.Interface().(type) {
-			case time.Time:
-				p.Value = x
-			case appengine.BlobKey:
-				p.Value = x
-			case appengine.GeoPoint:
-				p.Value = x
-			case datastore.ByteString:
-				p.Value = x
-			default:
-				switch v.Kind() {
-					case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
-						p.Value = v.Int()
-					case reflect.Bool:
-						p.Value = v.Bool()
-					case reflect.String:
-						p.Value = v.String()
-					case reflect.Float32, reflect.Float64:
-						p.Value = v.Float()
-					case reflect.Slice:
-						p.Multiple = true
-						if v.Type().Elem().Kind() != reflect.Uint8 {
-							if val, ok := codec.fieldNames[field.Name]; ok {
-								for j := 0; j < v.Len(); j++ {
-									if err := encodeStruct(v.Index(j).Addr().Interface(), props, true, val.childStruct); err != nil {
-										panic(err)
-									}
-								}
-								break
+		case time.Time:
+			p.Value = x
+		case appengine.BlobKey:
+			p.Value = x
+		case appengine.GeoPoint:
+			p.Value = x
+		case datastore.ByteString:
+			p.Value = x
+		default:
+			switch v.Kind() {
+			case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+				p.Value = v.Int()
+			case reflect.Bool:
+				p.Value = v.Bool()
+			case reflect.String:
+				p.Value = v.String()
+			case reflect.Float32, reflect.Float64:
+				p.Value = v.Float()
+			case reflect.Slice:
+				p.Multiple = true
+				if v.Type().Elem().Kind() != reflect.Uint8 {
+					if val, ok := codec.fieldNames[field.Name]; ok {
+						for j := 0; j < v.Len(); j++ {
+							if err := encodeStruct(v.Index(j).Addr().Interface(), props, true, val.childStruct); err != nil {
+								panic(err)
 							}
 						}
-						p.NoIndex = true
-						p.Value = v.Bytes()
-					case reflect.Struct:
-						if !v.CanAddr() {
-							return fmt.Errorf("datastore: unsupported struct field %s for entity of type %s: value %v is unaddressable",p.Name, sType, v)
-						}
-
-						if val, ok := codec.fieldNames[p.Name]; ok {
-							if nil != val.childStruct {
-								encodeStruct(v.Addr().Interface(), props, p.Multiple, val.childStruct)
-								continue
-							}
-							return fmt.Errorf("struct %s is not a field of codec %+v", p.Name, codec)
-						}
-						//if struct, recursively call itself until an error is found
-						return fmt.Errorf("FieldName %s not found in %v for Entity of type %s", p.Name, codec.fieldNames, sType)
+						break
+					}
 				}
+				p.NoIndex = true
+				p.Value = v.Bytes()
+			case reflect.Struct:
+				if !v.CanAddr() {
+					return fmt.Errorf("datastore: unsupported struct field %s for entity of type %s: value %v is unaddressable", p.Name, sType, v)
+				}
+
+				if val, ok := codec.fieldNames[p.Name]; ok {
+					if nil != val.childStruct {
+						encodeStruct(v.Addr().Interface(), props, p.Multiple, val.childStruct)
+						continue
+					}
+					return fmt.Errorf("struct %s is not a field of codec %+v", p.Name, codec)
+				}
+				//if struct, recursively call itself until an error is found
+				return fmt.Errorf("FieldName %s not found in %v for Entity of type %s", p.Name, codec.fieldNames, sType)
+			}
 		}
 		*props = append(*props, *p)
 	}
@@ -258,7 +260,7 @@ func decodeStruct(s reflect.Value, p datastore.Property, encodedField encodedFie
 				decodeStruct(field.Addr(), p, attr, l)
 			}
 			//else go down one level
-			cName := childName(p.Name);
+			cName := childName(p.Name)
 			if attr, ok := encodedField.childStruct.fieldNames[cName]; ok {
 				decodeStruct(field.Addr(), p, attr, l)
 			}
@@ -296,7 +298,7 @@ func decodeStruct(s reflect.Value, p datastore.Property, encodedField encodedFie
 					decodeStruct(field.Index(index), p, attr, l)
 				}
 				//else go down one level
-				cName := childName(p.Name);
+				cName := childName(p.Name)
 				if attr, ok := encodedField.childStruct.fieldNames[cName]; ok {
 					decodeStruct(field.Index(index), p, attr, l)
 				}
@@ -375,14 +377,12 @@ func decodeField(field reflect.Value, p datastore.Property) error {
 	return nil
 }
 
-//returns the name of a reference
 func referenceName(parentName string, refName string) string {
 	if parentName == "" {
 		return refName
 	}
-	return parentName + "." + refName
+	return fmt.Sprintf("%s.%s", parentName, refName)
 }
-
 
 func entityPropName(entityName string, fieldName string) string {
 	return fieldName
@@ -402,7 +402,7 @@ func baseName(name string) string {
 func pureName(fullName string) string {
 	lastIndex := strings.LastIndex(fullName, valSeparator)
 	if lastIndex > 0 {
-		return fullName[lastIndex + 1:]
+		return fullName[lastIndex+1:]
 	}
 	return fullName
 }
@@ -410,7 +410,7 @@ func pureName(fullName string) string {
 func childName(fullName string) string {
 	firstIndex := strings.Index(fullName, valSeparator)
 	if firstIndex > 0 {
-		return fullName[firstIndex + 1:]
+		return fullName[firstIndex+1:]
 	}
 	return fullName
 }
@@ -441,12 +441,11 @@ func toPropertyList(modelable modelable) ([]datastore.Property, error) {
 
 		p := datastore.Property{}
 
-
 		if field.Tag.Get("model") == tagNoindex {
 			p.NoIndex = true
 		}
 
-		p.Name = referenceName("", field.Name)
+		p.Name = field.Name
 
 		if rm, ok := model.references[i]; ok {
 			ref := rm.Modelable.getModel()
@@ -558,7 +557,6 @@ func toPropertyList(modelable modelable) ([]datastore.Property, error) {
 	}
 	return props, nil
 }
-
 
 func fromPropertyList(modelable modelable, props []datastore.Property) error {
 	//get the underlying prototype

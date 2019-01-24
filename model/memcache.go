@@ -2,18 +2,18 @@ package model
 
 import (
 	"golang.org/x/net/context"
-	"google.golang.org/appengine/memcache"
 	"google.golang.org/appengine/datastore"
+	"google.golang.org/appengine/memcache"
 	//"log"
 	"fmt"
 	"reflect"
 )
 
-type KeyMap map[int]string;
+type KeyMap map[int]string
 
 type cacheModel struct {
 	Modelable modelable
-	Keys KeyMap
+	Keys      KeyMap
 }
 
 //checks if cache Key is valid
@@ -36,7 +36,7 @@ func saveInMemcache(ctx context.Context, m modelable) (err error) {
 	}
 
 	if nil == model.Key {
-		return fmt.Errorf("no Key registered for modelable %s. Can't save in memcache.", model.structName);
+		return fmt.Errorf("no Key registered for modelable %s. Can't save in memcache.", model.structName)
 	}
 
 	i := memcache.Item{}
@@ -73,7 +73,7 @@ func saveInMemcache(ctx context.Context, m modelable) (err error) {
 		}
 	}
 
-	box := cacheModel{Keys:keyMap}
+	box := cacheModel{Keys: keyMap}
 	box.Modelable = m
 	i.Object = box
 
@@ -89,13 +89,13 @@ func loadFromMemcache(ctx context.Context, m modelable) (err error) {
 		return fmt.Errorf("no Key registered from modelable %s. Can't load from memcache", model.structName)
 	}
 
-	cKey := model.EncodedKey();
+	cKey := model.EncodedKey()
 
 	if !validCacheKey(cKey) {
 		return fmt.Errorf("cacheModel box Key %s is too long", cKey)
 	}
 
-	box := cacheModel{Keys:make(map[int]string), Modelable:m}
+	box := cacheModel{Keys: make(map[int]string), Modelable: m}
 
 	_, err = memcache.Gob.Get(ctx, cKey, &box)
 

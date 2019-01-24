@@ -79,7 +79,6 @@ func mapStructureLocked(t reflect.Type, s *encodedStruct, parentName string) {
 			continue
 		}
 
-
 		sName := field.Name
 		sValue := encodedField{index: i}
 		switch fType.Kind() {

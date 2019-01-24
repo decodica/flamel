@@ -12,14 +12,13 @@ import (
 	"time"
 )
 
-
 const name = "EntityName"
 const age int = 50
 
 type TestEntity struct {
 	model.Model
-	Name string
-	Child TestChild
+	Name     string
+	Child    TestChild
 	Nocreate TestNocreate
 }
 
@@ -61,7 +60,6 @@ func (controller *createController) Process(ctx context.Context, out *ResponseOu
 	return Redirect{Status: http.StatusOK}
 }
 
-
 // updates the testentity
 type updateController struct {
 	*testController
@@ -72,10 +70,11 @@ func (controller *updateController) Process(ctx context.Context, out *ResponseOu
 	q := model.NewQuery(&te)
 	q = q.WithField("Name =", name)
 	err := q.First(ctx, &te)
+
 	if err != nil {
 		msg := fmt.Sprintf("error retrieving entity with name = %s: %s", name, err.Error())
 		controller.t.Log(msg)
-		return Redirect{Status:http.StatusInternalServerError}
+		return Redirect{Status: http.StatusInternalServerError}
 	}
 
 	te.Child.Name = "UpdatedName"
@@ -85,12 +84,12 @@ func (controller *updateController) Process(ctx context.Context, out *ResponseOu
 	if err != nil {
 		msg := fmt.Sprintf("error updating entity: %s", err.Error())
 		controller.t.Log(msg)
-		return Redirect{Status:http.StatusInternalServerError}
+		return Redirect{Status: http.StatusInternalServerError}
 	}
 
 	err = memcache.Flush(ctx)
 	if err != nil {
-		return Redirect{Status:http.StatusInternalServerError}
+		return Redirect{Status: http.StatusInternalServerError}
 	}
 
 	return Redirect{Status: http.StatusOK}
@@ -107,7 +106,7 @@ func (controller *readController) Process(ctx context.Context, out *ResponseOutp
 	if !ok {
 		msg := fmt.Sprintf("wrong inputs: %+v", ins)
 		controller.t.Log(msg)
-		return Redirect{Status:http.StatusBadRequest}
+		return Redirect{Status: http.StatusBadRequest}
 	}
 
 	switch arg.Value() {
@@ -119,13 +118,13 @@ func (controller *readController) Process(ctx context.Context, out *ResponseOutp
 		if err != nil {
 			msg := fmt.Sprintf("error creating testEntity: %s", err)
 			controller.t.Log(msg)
-			return Redirect{Status:http.StatusInternalServerError}
+			return Redirect{Status: http.StatusInternalServerError}
 		}
 
 		if te.Name != name {
 			msg := fmt.Sprintf("entity name is different from %s", name)
 			controller.t.Log(msg)
-			return Redirect{Status:http.StatusExpectationFailed}
+			return Redirect{Status: http.StatusExpectationFailed}
 		}
 	// call this to check if the update was successful
 	case "age":
@@ -136,25 +135,23 @@ func (controller *readController) Process(ctx context.Context, out *ResponseOutp
 		if err != nil {
 			msg := fmt.Sprintf("error creating testEntity: %s", err)
 			controller.t.Log(msg)
-			return Redirect{Status:http.StatusInternalServerError}
+			return Redirect{Status: http.StatusInternalServerError}
 		}
 
 		if te.Nocreate.Num != age {
 			msg := fmt.Sprintf("nocreate num is different from %s", name)
 			controller.t.Log(msg)
-			return Redirect{Status:http.StatusExpectationFailed}
+			return Redirect{Status: http.StatusExpectationFailed}
 		}
 	}
 
 	err := memcache.Flush(ctx)
 	if err != nil {
-		return Redirect{Status:http.StatusInternalServerError}
+		return Redirect{Status: http.StatusInternalServerError}
 	}
+
 	return Redirect{Status: http.StatusOK}
 }
-
-
-
 
 func TestModel_Run(t *testing.T) {
 
@@ -167,17 +164,18 @@ func TestModel_Run(t *testing.T) {
 	defer instance.Close()
 
 	m := Instance()
+
 	app := &appTest{}
 	m.LaunchApp(app)
 
 	m.SetRoute("/create", func(ctx context.Context) Controller {
-		tc := testController{t:t}
-		return &createController{testController:&tc}
+		tc := testController{t: t}
+		return &createController{testController: &tc}
 	}, nil)
 
 	m.SetRoute("/update", func(ctx context.Context) Controller {
-		tc := testController{t:t}
-		return &updateController{testController:&tc}
+		tc := testController{t: t}
+		return &updateController{testController: &tc}
 	}, nil)
 
 	m.SetRoute("/read/:type", func(ctx context.Context) Controller {
@@ -186,10 +184,9 @@ func TestModel_Run(t *testing.T) {
 			msg := fmt.Sprintf("param %s -> %v", k, v)
 			t.Log(msg)
 		}
-		tc := testController{t:t}
-		return &readController{testController:&tc}
+		tc := testController{t: t}
+		return &readController{testController: &tc}
 	}, nil)
-
 
 	tryRequest(t, instance, "/create")
 	// sleep before making the second request so datastore syncronizes
@@ -208,7 +205,7 @@ func TestModel_Run(t *testing.T) {
 }
 
 func tryRequest(t *testing.T, instance aetest.Instance, endpoint string) {
-	req, err := instance.NewRequest(http.MethodGet, endpoint, nil )
+	req, err := instance.NewRequest(http.MethodGet, endpoint, nil)
 	if err != nil {
 		t.Fatalf("error creating %q request: %s", endpoint, err.Error())
 	}

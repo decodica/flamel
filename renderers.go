@@ -1,6 +1,7 @@
 package mage
 
 import (
+	"bytes"
 	"encoding/json"
 	"google.golang.org/appengine"
 	"google.golang.org/appengine/blobstore"
@@ -17,7 +18,14 @@ type TemplateRenderer struct {
 }
 
 func (renderer *TemplateRenderer) Render(w http.ResponseWriter) error {
-	return renderer.Template.ExecuteTemplate(w, renderer.TemplateName, renderer.Data)
+	buf := instance.bufferPool.Get().(bytes.Buffer)
+	defer instance.bufferPool.Put(buf)
+	err := renderer.Template.ExecuteTemplate(&buf, renderer.TemplateName, renderer.Data)
+	if err != nil {
+		return err
+	}
+	buf.WriteTo(w)
+	return nil
 }
 
 // Returns the data as JSON object(s)

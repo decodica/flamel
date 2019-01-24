@@ -1,6 +1,7 @@
 package mage
 
 import (
+	"bytes"
 	"distudio.com/mage/cors"
 	"distudio.com/mage/internal/router"
 	"errors"
@@ -19,7 +20,8 @@ import (
 
 type mage struct {
 	Config
-	app Application
+	app        Application
+	bufferPool *sync.Pool
 }
 
 type Application interface {
@@ -134,7 +136,13 @@ func Instance() *mage {
 
 	once.Do(func() {
 		config := DefaultConfig()
-		instance = &mage{Config: config}
+
+		pool := sync.Pool{
+			New: func() interface{} {
+				return bytes.Buffer{}
+			},
+		}
+		instance = &mage{Config: config, bufferPool: &pool}
 	})
 
 	return instance

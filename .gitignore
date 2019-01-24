@@ -125,3 +125,4 @@ $RECYCLE.BIN/
 # Windows shortcuts
 *.lnk
 .idea/codeStyles/
+/.idea/

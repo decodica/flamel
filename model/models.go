@@ -1,11 +1,11 @@
 package model
 
 import (
-	"golang.org/x/net/context"
-	"reflect"
-	"fmt"
 	"errors"
+	"fmt"
+	"golang.org/x/net/context"
 	"google.golang.org/appengine/datastore"
+	"reflect"
 )
 
 //Batch version of Read.

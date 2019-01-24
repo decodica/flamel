@@ -44,11 +44,11 @@ func (router *DefaultRouter) SetRoutes(urls []string, handler func(ctx context.C
 }
 
 func (router *DefaultRouter) SetRoute(url string, handler func(ctx context.Context) Controller, authenticator Authenticator) {
-	router.Router.SetRoute(url, func(ctx context.Context) interface{} {
+	router.Router.SetRoute(url, func(ctx context.Context) (interface{}, context.Context) {
 		if authenticator != nil {
 			ctx = authenticator.Authenticate(ctx)
 		}
-		return handler(ctx)
+		return handler(ctx), ctx
 	})
 }
 

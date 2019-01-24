@@ -44,8 +44,8 @@ type Model struct {
 //reference.Key and Modelable.getModel().Key might differ
 type reference struct {
 	Modelable modelable
-	Key *datastore.Key
-	Ancestor bool
+	Key       *datastore.Key
+	Ancestor  bool
 }
 
 type structure struct {
@@ -258,7 +258,7 @@ func index(m modelable) {
 				}
 			}
 		}
-	//if we already have references we update the modelable they point to
+		//if we already have references we update the modelable they point to
 	} else {
 		for k, _ := range model.references {
 			ref := model.references[k]
@@ -408,7 +408,6 @@ func updateReference(ctx context.Context, ref *reference, Key *datastore.Key) (e
 	return nil
 }
 
-
 //creates a reference
 func createReference(ctx context.Context, ref *reference) (err error) {
 	err = create(ctx, ref.Modelable)
@@ -425,7 +424,6 @@ func createReference(ctx context.Context, ref *reference) (err error) {
 
 	return nil
 }
-
 
 func read(ctx context.Context, m modelable) error {
 	model := m.getModel()
@@ -516,7 +514,7 @@ func del(ctx context.Context, m modelable) (err error) {
 
 type CreateOptions struct {
 	stringId string
-	intId int64
+	intId    int64
 }
 
 func NewCreateOptions() CreateOptions {
@@ -554,7 +552,7 @@ func CreateWithOptions(ctx context.Context, m modelable, copts *CreateOptions) (
 	opts := datastore.TransactionOptions{}
 	opts.XG = true
 	opts.Attempts = 1
-	err = datastore.RunInTransaction(ctx, func (ctx context.Context) error {
+	err = datastore.RunInTransaction(ctx, func(ctx context.Context) error {
 		return createWithOptions(ctx, m, copts)
 	}, &opts)
 
@@ -574,7 +572,7 @@ func Update(ctx context.Context, m modelable) (err error) {
 	model := m.getModel()
 	if !model.registered {
 		index(m)
-	//use elseif so we avoid checking for stale refs since the model has been registered one line above
+		//use elseif so we avoid checking for stale refs since the model has been registered one line above
 	} else if model.hasStaleReferences() {
 		index(m)
 	}
@@ -591,7 +589,7 @@ func Update(ctx context.Context, m modelable) (err error) {
 	opts := datastore.TransactionOptions{}
 	opts.XG = true
 	opts.Attempts = 1
-	err = datastore.RunInTransaction(ctx, func (ctx context.Context) error {
+	err = datastore.RunInTransaction(ctx, func(ctx context.Context) error {
 		return update(ctx, m)
 	}, &opts)
 
@@ -671,7 +669,7 @@ func Read(ctx context.Context, m modelable) (err error) {
 		return err
 	}
 
-	err = datastore.RunInTransaction(ctx, func (ctx context.Context) error {
+	err = datastore.RunInTransaction(ctx, func(ctx context.Context) error {
 		return read(ctx, m)
 	}, &opts)
 
@@ -682,7 +680,7 @@ func Delete(ctx context.Context, m modelable) (err error) {
 	defer func() {
 		if err == nil {
 			err = deleteFromMemcache(ctx, m)
-			if err != nil && err != memcache.ErrCacheMiss{
+			if err != nil && err != memcache.ErrCacheMiss {
 				gaelog.Errorf(ctx, "error deleting items from memcache: %v", err)
 			}
 		}
@@ -692,7 +690,7 @@ func Delete(ctx context.Context, m modelable) (err error) {
 	opts.Attempts = 1
 	opts.XG = true
 
-	err = datastore.RunInTransaction(ctx, func (ctx context.Context) error {
+	err = datastore.RunInTransaction(ctx, func(ctx context.Context) error {
 		return del(ctx, m)
 	}, &opts)
 

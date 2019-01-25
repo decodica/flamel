@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"golang.org/x/net/context"
 	"google.golang.org/appengine/datastore"
+	"google.golang.org/appengine/memcache"
 	"reflect"
 )
 
@@ -15,6 +16,14 @@ import (
 func ReadMulti(ctx context.Context, dst interface{}) error {
 	return readMulti(ctx, dst)
 }
+
+type source byte
+
+const (
+	none source = iota + 1
+	cache
+	store
+)
 
 //Batch version of read. It wraps datastore.GetMulti and adapts it to the modelable fwk
 func readMulti(ctx context.Context, dst interface{}) error {
@@ -39,7 +48,12 @@ func readMulti(ctx context.Context, dst interface{}) error {
 	}
 	//populate the key slice
 	l := collection.Len()
-	keys := make([]*datastore.Key, collection.Len(), l)
+
+	source := make([]source, collection.Len(), l)
+	keys := make([]*datastore.Key, 0, collection.Cap())
+
+	// make a copy of the destination slice
+	destination := reflect.MakeSlice(collection.Type(), 0, collection.Cap())
 
 	for i := 0; i < l; i++ {
 		mble, ok := collection.Index(i).Interface().(modelable)
@@ -47,17 +61,37 @@ func readMulti(ctx context.Context, dst interface{}) error {
 			return fmt.Errorf("invalid container of type %s. Container must be a slice of modelables", collection.Elem().Type().Name())
 		}
 
-		if mble.getModel().Key == nil {
-			return fmt.Errorf("missing key for modelable at index %d", i)
+		// try to fetch from memcache
+		err := loadFromMemcache(ctx, mble)
+		if err == nil {
+			collection.Index(i).Set(reflect.ValueOf(mble))
+			source[i] = cache
+			continue
 		}
 
-		keys[i] = mble.getModel().Key
+		if err != memcache.ErrCacheMiss {
+			return fmt.Errorf("can't fetch modelable %s from cache", mble.getModel().Name())
+		}
+
+		// we have an empty ref, skip it
+		if mble.getModel().Key == nil {
+			source[i] = none
+			continue
+		}
+
+		keys = append(keys, mble.getModel().Key)
+		destination = reflect.Append(destination, collection.Index(i))
 	}
 
-	err := datastore.GetMulti(ctx, keys, dst)
+	// debug
+	di := destination.Interface()
+	// we retrieved everything from memcache, no need to call datastore
+	if len(keys) > 0 {
+		err := datastore.GetMulti(ctx, keys, di)
 
-	if err != nil {
-		return err
+		if err != nil {
+			return err
+		}
 	}
 
 	for _, v := range refsi {

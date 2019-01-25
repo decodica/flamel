@@ -17,6 +17,7 @@ const valSeparator string = "."
 const tagDomain string = "model"
 const tagSkip string = "-"
 const tagNoindex string = "noindex"
+const tagZero string = "zero"
 const tagAncestor string = "ancestor"
 
 type modelable interface {
@@ -27,7 +28,6 @@ type modelable interface {
 type Model struct {
 	//Note: this is necessary to allow simple implementation of memcache encoding and coding
 	//else we get the all unexported fields error from Gob package
-	searchable bool `model:"-"`
 	registered bool `model:"-"`
 
 	//represents the mapping of the modelable containing this Model
@@ -51,6 +51,14 @@ type reference struct {
 type structure struct {
 	//encoded struct represents the mapping of the struct
 	*encodedStruct
+}
+
+func IsEmpty(m modelable) bool {
+	model := m.getModel()
+	if !model.registered {
+		index(m)
+	}
+	return model.Key == nil && isZero(model.modelable)
 }
 
 //Model satisfies modelable
@@ -224,10 +232,6 @@ func index(m modelable) {
 				continue
 			}
 
-			if tagName == tagSearch {
-				model.searchable = true
-			}
-
 			if obj.Field(i).Kind() == reflect.Struct {
 
 				if !obj.Field(i).CanAddr() {
@@ -316,6 +320,9 @@ func createWithOptions(ctx context.Context, m modelable, opts *CreateOptions) er
 			//case is that the reference has been loaded from the datastore
 			//we update the reference values using the reference Key
 			//then we update the root reference map Key
+			if !rm.writeIfZero && isZero(ref.Modelable) {
+				continue
+			}
 			if rm.Key != nil {
 				err := updateReference(ctx, &ref, rm.Key)
 				if err != nil {
@@ -370,6 +377,9 @@ func updateReference(ctx context.Context, ref *reference, Key *datastore.Key) (e
 				return err
 			}
 		} else {
+			if !rm.writeIfZero && isZero(r.Modelable) {
+				continue
+			}
 			//else, if the parent doesn't have the Key we must check the children
 			if rm.Key != nil {
 				//the child was loaded and then assigned to the parent: update the children
@@ -429,7 +439,8 @@ func read(ctx context.Context, m modelable) error {
 	model := m.getModel()
 
 	if model.Key == nil {
-		return errors.New(fmt.Sprintf("can't populate struct %s. Model has no Key", reflect.TypeOf(m).Elem().Name()))
+		return nil
+		// return errors.New(fmt.Sprintf("can't populate struct %s. Model has no Key", reflect.TypeOf(m).Elem().Name()))
 	}
 
 	err := datastore.Get(ctx, model.Key, m)
@@ -472,7 +483,7 @@ func update(ctx context.Context, m modelable) error {
 				return err
 			}
 		} else {
-			err := updateReference(ctx, &ref, ref.Key)
+			err := createReference(ctx, &ref)
 			if err != nil {
 				return err
 			}

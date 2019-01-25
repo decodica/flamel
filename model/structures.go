@@ -31,12 +31,15 @@ type encodedField struct {
 
 type encodedStruct struct {
 	structName string
+	searchable bool
+	// if true the modelable gets written even if it is zeroed
+	writeIfZero bool
 	fieldNames map[string]encodedField
 }
 
 func newEncodedStruct() *encodedStruct {
 	mp := make(map[string]encodedField)
-	return &encodedStruct{"", mp}
+	return &encodedStruct{fieldNames: mp}
 }
 
 //Keeps track of encoded structs according to their reflect.Type.
@@ -46,13 +49,13 @@ var encodedStructs = map[reflect.Type]*encodedStruct{}
 
 func mapStructure(t reflect.Type, s *encodedStruct, parentName string) {
 	encodedStructsMutex.Lock()
-	mapStructureLocked(t, s, parentName)
+	mapStructureLocked(t, s)
 	encodedStructsMutex.Unlock()
 }
 
 //maps a structure into a linked list representation of its fields.
 //It is used to ease the conversion between the Model framework and the datastore
-func mapStructureLocked(t reflect.Type, s *encodedStruct, parentName string) {
+func mapStructureLocked(t reflect.Type, s *encodedStruct) {
 	if t == typeOfModel || t == typeOfStructure {
 		return
 	}
@@ -61,6 +64,7 @@ func mapStructureLocked(t reflect.Type, s *encodedStruct, parentName string) {
 	for i := 0; i < t.NumField(); i++ {
 		field := t.Field(i)
 		fType := field.Type
+
 
 		//skip unexported fields
 		if field.PkgPath != "" {
@@ -77,6 +81,14 @@ func mapStructureLocked(t reflect.Type, s *encodedStruct, parentName string) {
 
 		if tagName == tagSkip {
 			continue
+		}
+
+		if tagName == tagSearch {
+			s.searchable = true
+		}
+
+		if tagName == tagZero {
+			s.writeIfZero = true
 		}
 
 		sName := field.Name
@@ -110,19 +122,19 @@ func mapStructureLocked(t reflect.Type, s *encodedStruct, parentName string) {
 			sValue.childStruct = childStruct
 			if reflect.PtrTo(fType).Implements(typeOfModelable) {
 				//we have a reference, so we must treat it as a root struct
-				mapStructureLocked(fType, childStruct, "")
+				mapStructureLocked(fType, childStruct)
 			} else {
-				mapStructureLocked(fType, childStruct, field.Name)
+				mapStructureLocked(fType, childStruct)
 			}
 			break
 		case reflect.Ptr:
-			//if we have a pointer we store the value it points to
+			//if we have a pointer we map the value it points to
 			fieldElem := fType.Elem()
 			if fieldElem.Kind() == reflect.Struct {
 				sMap := make(map[string]encodedField)
 				childStruct := &encodedStruct{structName: sName, fieldNames: sMap}
 				sValue.childStruct = childStruct
-				mapStructureLocked(fieldElem, childStruct, field.Name)
+				mapStructureLocked(fieldElem, childStruct)
 				break
 			}
 			fallthrough
@@ -216,6 +228,46 @@ func encodeStruct(s interface{}, props *[]datastore.Property, multiple bool, cod
 		*props = append(*props, *p)
 	}
 	return nil
+}
+
+func isZero(m interface{}) bool {
+	elem := reflect.Indirect(reflect.ValueOf(m))
+	fields := elem.NumField()
+	for i := 0; i < fields; i++ {
+		field := elem.Field(i)
+		if field.Type() == typeOfModel {
+			continue
+		}
+		switch field.Kind() {
+		case reflect.Struct:
+			return isZero(field.Interface())
+		case reflect.Ptr:
+			if !field.IsNil() {
+				return false
+			}
+		case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+			if field.Int() != 0 {
+				return false
+			}
+		case reflect.Bool:
+			if field.Bool() {
+				return false
+			}
+		case reflect.String:
+			if field.String() != "" {
+				return false
+			}
+		case reflect.Float32, reflect.Float64:
+			if field.Float() != 0 {
+				return false
+			}
+		case reflect.Slice, reflect.Array, reflect.Map, reflect.Chan:
+			if field.Len() > 0 {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 type propertyLoader struct {
@@ -381,11 +433,6 @@ func referenceName(parentName string, refName string) string {
 		return refName
 	}
 	return fmt.Sprintf("%s.%s", parentName, refName)
-}
-
-func entityPropName(entityName string, fieldName string) string {
-	return fieldName
-	//return fmt.Sprintf("%s.%s", entityName, fieldName);
 }
 
 //takes a property field name and returns it's base
@@ -575,7 +622,7 @@ func fromPropertyList(modelable modelable, props []datastore.Property) error {
 		if field, ok := sType.FieldByName(pure); ok {
 			if ref, ok := model.references[field.Index[0]]; ok {
 				//cast to key
-				if key, ok := p.Value.(*datastore.Key); ok {
+				if key, ok := p.Value.(*datastore.Key); ok || p.Value == nil {
 					rm := ref.Modelable.getModel()
 					rm.Key = key
 					continue

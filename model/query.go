@@ -64,13 +64,13 @@ func (q *Query) WithAncestor(ancestor modelable) (*Query, error) {
 }
 
 func (q *Query) WithField(field string, value interface{}) *Query {
-	prepared := entityPropName(q.mType.Name(), field)
+	prepared := field
 	q.dq = q.dq.Filter(prepared, value)
 	return q
 }
 
 func (q *Query) OrderBy(field string, order Order) *Query {
-	prepared := entityPropName(q.mType.Name(), field)
+	prepared := field
 	if order == DESC {
 		prepared = fmt.Sprintf("-%s", prepared)
 	}
@@ -96,7 +96,7 @@ func (q *Query) Distinct(fields ...string) *Query {
 	pf := make([]string, 0, 0)
 
 	for _, v := range fields {
-		prepared := entityPropName(q.mType.Name(), v)
+		prepared := v
 		pf = append(pf, prepared)
 	}
 

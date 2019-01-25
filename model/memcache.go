@@ -35,8 +35,9 @@ func saveInMemcache(ctx context.Context, m modelable) (err error) {
 		return fmt.Errorf("modelable %v is not registered", m)
 	}
 
-	if nil == model.Key {
-		return fmt.Errorf("no Key registered for modelable %s. Can't save in memcache.", model.structName)
+	if model.Key == nil {
+		return nil
+		// return fmt.Errorf("no key registered for modelable %s. Can't save in memcache", model.structName)
 	}
 
 	i := memcache.Item{}
@@ -55,7 +56,8 @@ func saveInMemcache(ctx context.Context, m modelable) (err error) {
 
 		//throw an error if the model Key and the reference Key do not coincide
 		if rm.Key == nil {
-			return fmt.Errorf("can't save to memcache. reference model Key is nil for reference: %+v", ref)
+			continue
+			// return fmt.Errorf("can't save to memcache. reference model Key is nil for reference: %+v", ref)
 		}
 
 		if rm.Key != ref.Key {
@@ -86,7 +88,8 @@ func loadFromMemcache(ctx context.Context, m modelable) (err error) {
 	model := m.getModel()
 
 	if model.Key == nil {
-		return fmt.Errorf("no Key registered from modelable %s. Can't load from memcache", model.structName)
+		return nil
+		// return fmt.Errorf("no Key registered from modelable %s. Can't load from memcache", model.structName)
 	}
 
 	cKey := model.EncodedKey()
@@ -153,7 +156,8 @@ func deleteFromMemcache(ctx context.Context, m modelable) (err error) {
 	model := m.getModel()
 
 	if model.Key == nil {
-		return fmt.Errorf("no Key registered from modelable %s. Can't delete from memcache", reflect.TypeOf(m).Elem().Name())
+		return nil
+		// return fmtErrorf("no Key registered from modelable %s. Can't delete from memcache", reflect.TypeOf(m).Elem().Name())
 	}
 
 	for k, _ := range model.references {

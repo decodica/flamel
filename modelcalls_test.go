@@ -28,6 +28,7 @@ type TestChild struct {
 }
 
 type TestNocreate struct {
+	model.Model
 	Num int
 }
 
@@ -44,13 +45,36 @@ type createController struct {
 
 func (controller *createController) Process(ctx context.Context, out *ResponseOutput) Redirect {
 	entity := TestEntity{}
+	empty := model.IsEmpty(&entity)
+	if !empty {
+		msg := fmt.Sprintf("entity %+v should be empty", entity)
+		controller.t.Log(msg)
+		return Redirect{Status: http.StatusConflict}
+	}
+
 	entity.Name = name
 	entity.Child.Name = "ChildName"
+
+	empty = model.IsEmpty(&entity)
+	if empty {
+		msg := fmt.Sprintf("entity %+v should not be empty", entity)
+		controller.t.Log(msg)
+		return Redirect{Status: http.StatusConflict}
+	}
+
 	err := model.Create(ctx, &entity)
+
 	if err != nil {
 		msg := fmt.Sprintf("error creating entity: %s", err.Error())
 		controller.t.Log(msg)
 		return Redirect{Status: http.StatusInternalServerError}
+	}
+
+	empty = model.IsEmpty(&entity)
+	if empty {
+		msg := fmt.Sprintf("entity %+v should not be empty", entity)
+		controller.t.Log(msg)
+		return Redirect{Status: http.StatusConflict}
 	}
 
 	err = memcache.Flush(ctx)
@@ -126,6 +150,12 @@ func (controller *readController) Process(ctx context.Context, out *ResponseOutp
 			controller.t.Log(msg)
 			return Redirect{Status: http.StatusExpectationFailed}
 		}
+
+		if !model.IsEmpty(&te.Nocreate) {
+			msg := fmt.Sprintf("nocreate must be empty")
+			controller.t.Log(msg)
+			return Redirect{Status: http.StatusExpectationFailed}
+		}
 	// call this to check if the update was successful
 	case "age":
 		te := TestEntity{}
@@ -153,7 +183,7 @@ func (controller *readController) Process(ctx context.Context, out *ResponseOutp
 	return Redirect{Status: http.StatusOK}
 }
 
-func TestModel_Run(t *testing.T) {
+func TestModelCalls_Run(t *testing.T) {
 
 	t.Log("*** TEST STARTED ***")
 	opts := aetest.Options{}

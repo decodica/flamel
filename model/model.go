@@ -155,7 +155,7 @@ func (model *Model) hasStaleReferences() bool {
 
 	mv := reflect.Indirect(reflect.ValueOf(m))
 
-	for k, _ := range model.references {
+	for k := range model.references {
 		field := mv.Field(k)
 		ref := model.references[k]
 		if field.Interface() != ref.Modelable {
@@ -205,7 +205,7 @@ func index(m modelable) {
 	} else {
 		//we didn't map the structure earlier on. Map it now
 		model.structure.encodedStruct = newEncodedStruct()
-		mapStructure(mType, model.structure.encodedStruct, "")
+		mapStructure(mType, model.structure.encodedStruct)
 	}
 
 	model.structure.structName = name
@@ -320,14 +320,13 @@ func createWithOptions(ctx context.Context, m modelable, opts *CreateOptions) er
 			//case is that the reference has been loaded from the datastore
 			//we update the reference values using the reference Key
 			//then we update the root reference map Key
-			if !rm.writeIfZero && isZero(ref.Modelable) {
-				continue
-			}
 			if rm.Key != nil {
 				err := updateReference(ctx, &ref, rm.Key)
 				if err != nil {
 					return err
 				}
+			} else if rm.skipIfZero && isZero(ref.Modelable) {
+				continue
 			} else {
 				err := createReference(ctx, &ref)
 				if err != nil {
@@ -350,10 +349,10 @@ func createWithOptions(ctx context.Context, m modelable, opts *CreateOptions) er
 
 	// if the model is searchable, update the search index with the new values
 	if model.searchable {
-		searchPut(ctx, model, model.Name())
+		err = searchPut(ctx, model, model.Name())
 	}
 
-	return nil
+	return err
 }
 
 //creates a datastore entity and stores the Key into the model field
@@ -362,7 +361,7 @@ func create(ctx context.Context, m modelable) error {
 	return createWithOptions(ctx, m, &opts)
 }
 
-func updateReference(ctx context.Context, ref *reference, Key *datastore.Key) (err error) {
+func updateReference(ctx context.Context, ref *reference, key *datastore.Key) (err error) {
 	model := ref.Modelable.getModel()
 
 	//we iterate through the references of the current model
@@ -377,9 +376,6 @@ func updateReference(ctx context.Context, ref *reference, Key *datastore.Key) (e
 				return err
 			}
 		} else {
-			if !rm.writeIfZero && isZero(r.Modelable) {
-				continue
-			}
 			//else, if the parent doesn't have the Key we must check the children
 			if rm.Key != nil {
 				//the child was loaded and then assigned to the parent: update the children
@@ -388,6 +384,9 @@ func updateReference(ctx context.Context, ref *reference, Key *datastore.Key) (e
 				if err != nil {
 					return err
 				}
+			} else if rm.skipIfZero && isZero(r.Modelable) {
+				// the child is empty and must be kept empty
+				continue
 			} else {
 				//neither the parent and the children specify a Key.
 				//We create the children and update the parent's Key
@@ -402,10 +401,10 @@ func updateReference(ctx context.Context, ref *reference, Key *datastore.Key) (e
 	}
 
 	//we align ref and parent Key
-	model.Key = Key
-	ref.Key = Key
+	model.Key = key
+	ref.Key = key
 
-	_, err = datastore.Put(ctx, Key, ref.Modelable)
+	_, err = datastore.Put(ctx, key, ref.Modelable)
 
 	if err != nil {
 		return err
@@ -413,9 +412,9 @@ func updateReference(ctx context.Context, ref *reference, Key *datastore.Key) (e
 
 	// if the model is searchable, update the search index with the new values
 	if model.searchable {
-		searchPut(ctx, model, model.Name())
+		err = searchPut(ctx, model, model.Name())
 	}
-	return nil
+	return err
 }
 
 //creates a reference
@@ -449,7 +448,7 @@ func read(ctx context.Context, m modelable) error {
 		return err
 	}
 
-	for k, _ := range model.references {
+	for k := range model.references {
 		ref := model.references[k]
 		rm := ref.Modelable.getModel()
 		err := read(ctx, ref.Modelable)
@@ -482,7 +481,17 @@ func update(ctx context.Context, m modelable) error {
 			if err != nil {
 				return err
 			}
+		} else if ref.Key != nil {
+			// in this case a new reference has been assigned in place of an empty reference
+			err := updateReference(ctx, &ref, ref.Key)
+			if err != nil {
+				return err
+			}
+		} else if rm.skipIfZero && isZero(ref.Modelable) {
+			// skip if the ref must be kept empty
+			continue
 		} else {
+			// else create it
 			err := createReference(ctx, &ref)
 			if err != nil {
 				return err

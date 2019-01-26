@@ -13,7 +13,7 @@ type Entity struct {
 	Name string
 	Num int
 	Child Child
-	EmptyChild EmptyChild
+	EmptyChild EmptyChild `model:"zero"`
 }
 
 type Child struct {
@@ -28,11 +28,87 @@ type Grandchild struct {
 }
 
 type EmptyChild struct {
+	Model
 	Emptiness int
 }
 
 const total = 100
 const find = 10
+
+func TestIndexing(t *testing.T) {
+
+	ctx, done, err := aetest.NewContext()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer done()
+
+	// test correct indexing
+	entity := Entity{}
+	index(&entity)
+	if !entity.EmptyChild.skipIfZero {
+		t.Fatal("empty child is not skipIfZero")
+	}
+
+	entity.Name = "entity"
+	entity.Child.Name = "child"
+	err = Create(ctx, &entity)
+	if err != nil {
+		t.Fatal(err.Error())
+	}
+
+
+	err = Read(ctx, &entity)
+	if err != nil {
+		t.Fatal(err.Error())
+	}
+
+	if entity.EmptyChild.Key != nil {
+		t.Fatal("empty child has non-nil key")
+	}
+}
+
+func TestUpdate(t *testing.T) {
+	ctx, done, err := aetest.NewContext()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer done()
+
+	// test correct indexing
+	entity := Entity{}
+	entity.Child.Name = "child"
+	entity.Child.Grandchild.GrandchildNum = 10
+
+	err = Create(ctx, &entity)
+	if err != nil {
+		t.Fatal(err.Error())
+	}
+
+	err = Read(ctx, &entity)
+	if err != nil {
+		t.Fatal(err)
+	}
+	entity.Child.Grandchild.GrandchildNum = 100
+	entity.Child.Name = ""
+
+	err = Update(ctx, &entity)
+	if err != nil {
+		t.Fatal(err.Error())
+	}
+
+	if entity.EmptyChild.Key != nil {
+		t.Fatal("empty child has non-nil key after update")
+	}
+
+	if entity.Child.Grandchild.GrandchildNum != 100 {
+		t.Fatalf("grand child has not been updated. Num is %d", entity.Child.Grandchild.GrandchildNum)
+	}
+
+	if entity.Child.Name != "" {
+		t.Fatalf("child has not been updated. Name is %s", entity.Child.Name)
+	}
+}
 
 func TestModel(t *testing.T) {
 

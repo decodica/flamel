@@ -30,10 +30,10 @@ type encodedField struct {
 }
 
 type encodedStruct struct {
-	structName string
 	searchable bool
-	// if true the modelable gets written even if it is zeroed
-	writeIfZero bool
+	// if true the modelable does not get written if zeroed
+	skipIfZero bool
+	structName string
 	fieldNames map[string]encodedField
 }
 
@@ -47,7 +47,7 @@ func newEncodedStruct() *encodedStruct {
 var encodedStructsMutex sync.Mutex
 var encodedStructs = map[reflect.Type]*encodedStruct{}
 
-func mapStructure(t reflect.Type, s *encodedStruct, parentName string) {
+func mapStructure(t reflect.Type, s *encodedStruct) {
 	encodedStructsMutex.Lock()
 	mapStructureLocked(t, s)
 	encodedStructsMutex.Unlock()
@@ -83,14 +83,6 @@ func mapStructureLocked(t reflect.Type, s *encodedStruct) {
 			continue
 		}
 
-		if tagName == tagSearch {
-			s.searchable = true
-		}
-
-		if tagName == tagZero {
-			s.writeIfZero = true
-		}
-
 		sName := field.Name
 		sValue := encodedField{index: i}
 		switch fType.Kind() {
@@ -116,16 +108,13 @@ func mapStructureLocked(t reflect.Type, s *encodedStruct) {
 				sValue.childStruct.structName = sName
 				break
 			}
-			//todo: add to map anyway, so that the second time we get a cached value
+
 			sMap := make(map[string]encodedField)
 			childStruct := &encodedStruct{structName: sName, fieldNames: sMap}
+			childStruct.skipIfZero = tagName == tagZero
+			childStruct.searchable = tagName == tagSearch
 			sValue.childStruct = childStruct
-			if reflect.PtrTo(fType).Implements(typeOfModelable) {
-				//we have a reference, so we must treat it as a root struct
-				mapStructureLocked(fType, childStruct)
-			} else {
-				mapStructureLocked(fType, childStruct)
-			}
+			mapStructureLocked(fType, childStruct)
 			break
 		case reflect.Ptr:
 			//if we have a pointer we map the value it points to
@@ -133,6 +122,8 @@ func mapStructureLocked(t reflect.Type, s *encodedStruct) {
 			if fieldElem.Kind() == reflect.Struct {
 				sMap := make(map[string]encodedField)
 				childStruct := &encodedStruct{structName: sName, fieldNames: sMap}
+				childStruct.skipIfZero = tagName == tagZero
+				childStruct.searchable = tagName == tagSearch
 				sValue.childStruct = childStruct
 				mapStructureLocked(fieldElem, childStruct)
 				break

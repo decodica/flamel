@@ -264,12 +264,20 @@ func index(m modelable) {
 		}
 		//if we already have references we update the modelable they point to
 	} else {
-		for k, _ := range model.references {
+		for k := range model.references {
 			ref := model.references[k]
 
-			//we get the old reference
+			// register the reference if not registered
+			// this can happen if a reference allows to be zeroed and the parent model has been read
+			// from the datastore
+			if !ref.Modelable.getModel().registered {
+				index(ref.Modelable)
+				continue
+			}
+
+			// if the reference has been changed since our last check, we must register the new reference
+			// to replace the stale one.
 			orig := ref.Modelable
-			//we get the new reference
 			newRef := obj.Field(k).Addr().Interface().(modelable)
 
 			if orig == newRef {
@@ -309,7 +317,7 @@ func createWithOptions(ctx context.Context, m modelable, opts *CreateOptions) er
 	var ancKey *datastore.Key = nil
 	//we iterate through the model references.
 	//if a reference has its own Key we use it as a value in the root entity
-	for k, _ := range model.references {
+	for k := range model.references {
 		ref := model.references[k]
 		rm := ref.Modelable.getModel()
 		if ref.Key != nil {

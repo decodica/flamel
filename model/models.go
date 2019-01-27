@@ -43,8 +43,8 @@ func readMulti(ctx context.Context, dst interface{}) error {
 
 	//save the references indexes
 	refsi := make([]int, 0, 0)
-	for k, _ := range mod.references {
-		refsi = append(refsi, k)
+	for _, ref := range mod.references {
+		refsi = append(refsi, ref.idx)
 	}
 	//populate the key slice
 	l := collection.Len()
@@ -94,12 +94,12 @@ func readMulti(ctx context.Context, dst interface{}) error {
 		}
 	}
 
-	for _, v := range refsi {
+	for _, ref := range mod.references {
 		//allocate a slice and fill it with pointers of the entities retrieved
-		typ := reflect.TypeOf(mod.references[v].Modelable)
+		typ := reflect.TypeOf(ref.Modelable)
 		refs := reflect.MakeSlice(reflect.SliceOf(typ), l, l)
 		for i := 0; i < l; i++ {
-			reflref := collection.Index(i).Elem().Field(v)
+			reflref := collection.Index(i).Elem().Field(ref.idx)
 			refs.Index(i).Set(reflref.Addr())
 		}
 		err := readMulti(ctx, refs.Interface())

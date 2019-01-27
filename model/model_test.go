@@ -156,40 +156,11 @@ func TestModel(t *testing.T) {
 	}
 }
 
-func TestStaleReferences(t *testing.T) {
-	ctx, done, err := aetest.NewContext()
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer done()
-
-	entity := Entity{}
-	entity.Name = "Entity"
-	err = Create(ctx, &entity)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	stale := entity.mustReindex()
-	if stale {
-		t.Fatal("entity can't have stale references, it has not been changed")
-	}
-
-	child := Child{}
-	child.Name = "Enzo"
-	entity.Child = child
-	stale = entity.mustReindex()
-	if !stale {
-		t.Fatal("entity should have stale references. Child has been changed")
-	}
-
-}
-
 func BenchmarkMapStructureLocked(b *testing.B) {
 	entity := Entity{}
 	typ := reflect.TypeOf(entity)
-	structure := newEncodedStruct()
-	for n:= 0; n < b.N; n++ {
+	structure := newEncodedStruct(typ.Name())
+	for n := 0; n < b.N; n++ {
 		mapStructureLocked(typ, structure)
 	}
 }

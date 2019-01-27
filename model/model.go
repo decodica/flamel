@@ -12,7 +12,6 @@ import (
 const valSeparator string = "."
 
 const tagDomain string = "model"
-const tagSkip string = "-"
 const tagNoindex string = "noindex"
 const tagZero string = "zero"
 const tagAncestor string = "ancestor"
@@ -25,6 +24,8 @@ type modelable interface {
 //represents a child struct modelable.
 //reference.Key and Modelable.getModel().Key might differ
 type reference struct {
+	// parent's index of reference field
+	idx       int
 	Modelable modelable
 	Key       *datastore.Key
 	Ancestor  bool
@@ -43,7 +44,7 @@ type Model struct {
 	//represents the mapping of the modelable containing this Model
 	*structure `model:"-"`
 
-	references map[int]reference `model:"-"`
+	references []reference `model:"-"`
 
 	Key *datastore.Key `model:"-"`
 	//the embedding modelable
@@ -56,6 +57,16 @@ func (model *Model) getModel() *Model {
 
 func (model *Model) setModel(m Model) {
 	*model = m
+}
+
+func (model Model) referenceAtIndex(idx int) *reference {
+	// for small number of elements, such as references of a struct, a linear search is quick enough
+	for _, v := range model.references {
+		if v.idx == idx {
+			return &v
+		}
+	}
+	return nil
 }
 
 func IsEmpty(m modelable) bool {
@@ -194,68 +205,52 @@ func index(m modelable) {
 		model.structure.encodedStruct = enStruct
 	} else {
 		//we didn't map the structure earlier on. Map it now
-		model.structure.encodedStruct = newEncodedStruct()
+		model.structure.encodedStruct = newEncodedStruct(name)
 		mapStructure(mType, model.structure.encodedStruct)
 	}
 
-	model.structure.structName = name
 	hasAncestor := false
 
 	if model.references == nil {
+
+		refno := len(model.encodedStruct.referencesIdx)
 		//if we have no references mapped we rebuild the mapping
-		model.references = make(map[int]reference)
+		model.references = make([]reference, refno)
 
-		//map the references of the model
-		for i := 0; i < obj.NumField(); i++ {
-
-			fType := mType.Field(i)
-
-			if obj.Field(i).Type() == typeOfModel {
-				//skip mapping of the model
-				continue
-			}
-
+		for idx, num := range model.encodedStruct.referencesIdx {
+			fType := mType.Field(num)
 			tags := strings.Split(fType.Tag.Get(tagDomain), ",")
 			tagName := tags[0]
 
-			if tagName == tagSkip {
-				continue
+			isAnc := tagName == tagAncestor
+
+			if isAnc {
+				//flag the index as the ancestor
+				//if already has an ancestor we throw an error
+				if hasAncestor {
+					err := fmt.Errorf("multiple ancestors set for model of type %s", mType.Name())
+					panic(err)
+				}
+				hasAncestor = true
 			}
 
-			if obj.Field(i).Kind() == reflect.Struct {
+			rm := obj.Field(num).Addr().Interface().(modelable)
 
-				if !obj.Field(i).CanAddr() {
-					panic(fmt.Errorf("unaddressable reference %v in Model", obj.Field(i)))
-				}
-
-				if rm, ok := obj.Field(i).Addr().Interface().(modelable); ok {
-					//we register the modelable
-					isAnc := tagName == tagAncestor
-
-					if isAnc {
-						//flag the index as the ancestor
-						//if already has an ancestor we throw an error
-						if hasAncestor {
-							err := fmt.Errorf("multiple ancestors set for model of type %s", mType.Name())
-							panic(err)
-						}
-						hasAncestor = true
-					}
-
-					index(rm)
-					//here the reference is registered
-					//if we already have the reference we update the modelable
-					hr := reference{}
-					hr.Modelable = rm
-					hr.Ancestor = isAnc
-					model.references[i] = hr
-				}
-			}
+			index(rm)
+			//here the reference is registered
+			//if we already have the reference we update the modelable
+			hr := reference{}
+			// set the field idx of the reference
+			hr.idx = num
+			hr.Modelable = rm
+			hr.Ancestor = isAnc
+			model.references[idx] = hr
 		}
+
 		//if we already have references we update the modelable they point to
 	} else {
-		for k := range model.references {
-			ref := model.references[k]
+		for i, ref := range model.references {
+			//ref := model.references[k]
 
 			// register the reference if not registered
 			// this can happen if a reference allows to be zeroed and the parent model has been read
@@ -268,7 +263,7 @@ func index(m modelable) {
 			// if the reference has been changed since our last check, we must register the new reference
 			// to replace the stale one.
 			orig := ref.Modelable
-			newRef := obj.Field(k).Addr().Interface().(modelable)
+			newRef := obj.Field(ref.idx).Addr().Interface().(modelable)
 
 			if orig == newRef {
 				continue
@@ -286,7 +281,7 @@ func index(m modelable) {
 			index(newRef)
 
 			ref.Modelable = newRef
-			model.references[k] = ref
+			model.references[i] = ref
 		}
 	}
 
@@ -334,39 +329,3 @@ func modelOf(src interface{}) *Model {
 
 	return nil
 }
-
-func (model *Model) mustReindex() bool {
-
-	for _, ref := range model.references {
-		if m := ref.Modelable.getModel(); m.Key != ref.Key || !m.registered {
-			return true
-		}
-	}
-	return false
-}
-
-// returns true if the model has stale references.
-// A reference is stale if its parent model points to a reference which has been changed
-// This can happen when the underlying modelable of a reference is reassigned with a different struct
-// usually after a read and a reassignment of the modelable
-// model.Read(ctx, &entity)
-// entity.Child = Child{}
-/*func (model *Model) hasStaleReferences() bool {
-	//m := model.modelable
-
-	//mv := reflect.Indirect(reflect.ValueOf(m))
-
-	for k := range model.references {
-		///field := mv.Field(k)
-		ref := model.references[k]
-
-		if ref.Modelable.getModel().Key != ref.Key {
-			return true
-		}
-		// faddr := field.Addr().Interface()
-		// if faddr != ref.Modelable {
-			// return true
-		// }
-	}
-	return false
-}*/

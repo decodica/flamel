@@ -27,10 +27,7 @@ func (opts *CreateOptions) WithIntId(id int64) {
 }
 
 func CreateWithOptions(ctx context.Context, m modelable, copts *CreateOptions) (err error) {
-	model := m.getModel()
-	if !model.mustReindex() {
-		index(m)
-	}
+	index(m)
 
 	opts := datastore.TransactionOptions{}
 	opts.XG = true
@@ -65,8 +62,7 @@ func createWithOptions(ctx context.Context, m modelable, opts *CreateOptions) er
 	var ancKey *datastore.Key = nil
 	//we iterate through the model references.
 	//if a reference has its own Key we use it as a value in the root entity
-	for k := range model.references {
-		ref := model.references[k]
+	for i, ref := range model.references {
 		rm := ref.Modelable.getModel()
 		if ref.Key != nil {
 			//this can't happen because we are in create, thus the root model can't have a Key
@@ -93,7 +89,7 @@ func createWithOptions(ctx context.Context, m modelable, opts *CreateOptions) er
 		if ref.Ancestor {
 			ancKey = ref.Key
 		}
-		model.references[k] = ref
+		model.references[i] = ref
 	}
 
 	newKey := datastore.NewKey(ctx, model.structName, opts.stringId, opts.intId, ancKey)

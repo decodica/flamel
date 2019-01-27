@@ -22,7 +22,6 @@ var (
 
 //struct value represent a struct that internally can map other structs
 //fieldIndex is the index of the struct
-//if isReference is true, the struct must be considered as a separate model
 type encodedField struct {
 	index       int
 	childStruct *encodedStruct
@@ -32,14 +31,16 @@ type encodedField struct {
 type encodedStruct struct {
 	searchable bool
 	// if true the modelable does not get written if zeroed
-	skipIfZero bool
-	structName string
-	fieldNames map[string]encodedField
+	skipIfZero    bool
+	structName    string
+	fieldNames    map[string]encodedField
+	referencesIdx []int
 }
 
-func newEncodedStruct() *encodedStruct {
+func newEncodedStruct(name string) *encodedStruct {
 	mp := make(map[string]encodedField)
-	return &encodedStruct{fieldNames: mp}
+	ri := make([]int, 0)
+	return &encodedStruct{structName: name, fieldNames: mp, referencesIdx: ri}
 }
 
 //Keeps track of encoded structs according to their reflect.Type.
@@ -78,10 +79,6 @@ func mapStructureLocked(t reflect.Type, s *encodedStruct) {
 		tags := strings.Split(field.Tag.Get(tagDomain), ",")
 		tagName := tags[0]
 
-		if tagName == tagSkip {
-			continue
-		}
-
 		sName := field.Name
 		sValue := encodedField{index: i}
 		switch fType.Kind() {
@@ -108,10 +105,12 @@ func mapStructureLocked(t reflect.Type, s *encodedStruct) {
 				break
 			}
 
-			sMap := make(map[string]encodedField)
-			childStruct := &encodedStruct{structName: sName, fieldNames: sMap}
+			childStruct := newEncodedStruct(sName)
 			childStruct.skipIfZero = tagName == tagZero
 			childStruct.searchable = tagName == tagSearch
+			if reflect.PtrTo(fType).Implements(typeOfModelable) {
+				s.referencesIdx = append(s.referencesIdx, i)
+			}
 			sValue.childStruct = childStruct
 			mapStructureLocked(fType, childStruct)
 			break
@@ -119,10 +118,12 @@ func mapStructureLocked(t reflect.Type, s *encodedStruct) {
 			//if we have a pointer we map the value it points to
 			fieldElem := fType.Elem()
 			if fieldElem.Kind() == reflect.Struct {
-				sMap := make(map[string]encodedField)
-				childStruct := &encodedStruct{structName: sName, fieldNames: sMap}
+				childStruct := newEncodedStruct(sName)
 				childStruct.skipIfZero = tagName == tagZero
 				childStruct.searchable = tagName == tagSearch
+				if fType.Implements(typeOfModelable) {
+					s.referencesIdx = append(s.referencesIdx, i)
+				}
 				sValue.childStruct = childStruct
 				mapStructureLocked(fieldElem, childStruct)
 				break
@@ -471,10 +472,6 @@ func toPropertyList(modelable modelable) ([]datastore.Property, error) {
 			continue
 		}
 
-		if field.Tag.Get("model") == tagSkip {
-			continue
-		}
-
 		p := datastore.Property{}
 
 		if field.Tag.Get("model") == tagNoindex {
@@ -483,13 +480,9 @@ func toPropertyList(modelable modelable) ([]datastore.Property, error) {
 
 		p.Name = field.Name
 
-		if rm, ok := model.references[i]; ok {
-			ref := rm.Modelable.getModel()
-
-			//pass reference types to datastore as *datastore.Key type
-			//	name := ref_model_prefix + ref.structName;
-			//p := datastore.Property{Name:name, Value:ref.key};
-			p.Value = ref.Key
+		if ref := model.referenceAtIndex(i); ref != nil {
+			rm := ref.Modelable.getModel()
+			p.Value = rm.Key
 			props = append(props, p)
 			continue
 		}
@@ -610,7 +603,7 @@ func fromPropertyList(modelable modelable, props []datastore.Property) error {
 		//in this way we can mix model. with datastore. package
 		pure := pureName(p.Name)
 		if field, ok := sType.FieldByName(pure); ok {
-			if ref, ok := model.references[field.Index[0]]; ok {
+			if ref := model.referenceAtIndex(field.Index[0]); ref != nil {
 				//cast to key
 				if key, ok := p.Value.(*datastore.Key); ok || p.Value == nil {
 					rm := ref.Modelable.getModel()

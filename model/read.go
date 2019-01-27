@@ -7,10 +7,7 @@ import (
 
 // Reads data from the datastore and writes them into the modelable.
 func Read(ctx context.Context, m modelable) (err error) {
-	model := m.getModel()
-	if model.mustReindex() {
-		index(m)
-	}
+	index(m)
 
 	opts := datastore.TransactionOptions{}
 	opts.XG = true
@@ -44,8 +41,7 @@ func read(ctx context.Context, m modelable) error {
 		return err
 	}
 
-	for k := range model.references {
-		ref := model.references[k]
+	for k, ref := range model.references {
 		rm := ref.Modelable.getModel()
 		err := read(ctx, ref.Modelable)
 		if err != nil {

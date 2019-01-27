@@ -49,8 +49,7 @@ func saveInMemcache(ctx context.Context, m modelable) (err error) {
 
 	keyMap := make(KeyMap)
 
-	for k := range model.references {
-		ref := model.references[k]
+	for _, ref := range model.references {
 		r := ref.Modelable
 		rm := r.getModel()
 
@@ -71,7 +70,7 @@ func saveInMemcache(ctx context.Context, m modelable) (err error) {
 		}
 
 		if rm.Key != nil {
-			keyMap[k] = rm.EncodedKey()
+			keyMap[ref.idx] = rm.EncodedKey()
 		}
 	}
 
@@ -106,13 +105,13 @@ func loadFromMemcache(ctx context.Context, m modelable) (err error) {
 		return err
 	}
 
-	for k := range model.references {
-		if encodedKey, ok := box.Keys[k]; ok {
+	for _, ref := range model.references {
+		if encodedKey, ok := box.Keys[ref.idx]; ok {
 			decodedKey, err := datastore.DecodeKey(encodedKey)
 			if err != nil {
 				return err
 			}
-			ref := model.references[k]
+
 			r := ref.Modelable
 			rm := r.getModel()
 			rm.Key = decodedKey
@@ -121,10 +120,9 @@ func loadFromMemcache(ctx context.Context, m modelable) (err error) {
 				return err
 			}
 			ref.Key = decodedKey
-			model.references[k] = ref
 			//assign the reference values to the box struct.
 			//this needs to be done so that the passing modelable is updated
-			field := reflect.Indirect(reflect.ValueOf(box.Modelable)).Field(k)
+			field := reflect.Indirect(reflect.ValueOf(box.Modelable)).Field(ref.idx)
 			src := reflect.Indirect(reflect.ValueOf(r))
 			field.Set(src)
 		}

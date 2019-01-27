@@ -11,10 +11,7 @@ import (
 // the root modelable will point to the loaded entity
 // If a reference is newly created its value will be updated accordingly to the model
 func Update(ctx context.Context, m modelable) (err error) {
-	model := m.getModel()
-	if !model.mustReindex() {
-		index(m)
-	}
+	index(m)
 
 	opts := datastore.TransactionOptions{}
 	opts.XG = true
@@ -36,8 +33,7 @@ func updateReference(ctx context.Context, ref *reference, key *datastore.Key) (e
 	model := ref.Modelable.getModel()
 
 	//we iterate through the references of the current model
-	for k := range model.references {
-		r := model.references[k]
+	for i, r := range model.references {
 		rm := r.Modelable.getModel()
 		//We check if the parent has a Key related to the reference.
 		//If it does we use the Key provided by the parent to update the children
@@ -67,7 +63,7 @@ func updateReference(ctx context.Context, ref *reference, key *datastore.Key) (e
 				}
 			}
 		}
-		model.references[k] = r
+		model.references[i] = r
 	}
 
 	//we align ref and parent Key
@@ -97,8 +93,7 @@ func update(ctx context.Context, m modelable) error {
 		return fmt.Errorf("can't update modelable %v. Missing Key", m)
 	}
 
-	for k := range model.references {
-		ref := model.references[k]
+	for i, ref := range model.references {
 		rm := ref.Modelable.getModel()
 
 		if rm.Key != nil {
@@ -123,7 +118,7 @@ func update(ctx context.Context, m modelable) error {
 			}
 		}
 
-		model.references[k] = ref
+		model.references[i] = ref
 	}
 
 	Key, err := datastore.Put(ctx, model.Key, m)

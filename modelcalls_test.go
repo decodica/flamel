@@ -19,7 +19,7 @@ type TestEntity struct {
 	model.Model
 	Name     string
 	Child    TestChild
-	Nocreate TestNocreate
+	Nocreate TestNocreate `model:"zero"`
 }
 
 type TestChild struct {

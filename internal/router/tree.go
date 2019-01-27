@@ -3,7 +3,7 @@ package router
 import (
 	"sort"
 	"strings"
-	)
+)
 
 // A specialized radix tree implementation to handle route matching.
 // heavily inspired by @https://github.com/armon/go-radix/blob/master/radix.go
@@ -131,6 +131,7 @@ func longestPrefix(k1, k2 string) int {
 	}
 	return i
 }
+
 // explode the compressed note by creating a new edge for each extra url
 // for a given url "/first/second/third" we add the edges: "/", "first", "/", "second", "/", "third"
 func splitSegments(url string) []string {
@@ -149,9 +150,9 @@ func splitSegments(url string) []string {
 			continue
 		}
 
-		s, slash := url[:idx], url[idx:idx + 1]
+		s, slash := url[:idx], url[idx:idx+1]
 		segments = append(segments, s, slash)
-		url = url[idx + 1:]
+		url = url[idx+1:]
 	}
 
 	return segments
@@ -189,7 +190,7 @@ func (t *tree) insert(route *Route) {
 
 			for i := 0; i < l; i++ {
 				var r *Route
-				if i == l - 1 {
+				if i == l-1 {
 					r = route
 				}
 
@@ -279,7 +280,7 @@ func (t *tree) insert(route *Route) {
 
 		for i := 0; i < l; i++ {
 			var r *Route
-			if i == l - 1 {
+			if i == l-1 {
 				r = route
 			}
 			segment := segments[i]
@@ -301,22 +302,6 @@ func (t *tree) insert(route *Route) {
 
 		return
 	}
-}
-
-// recursiveWalk is used to do a pre-order walk of a node
-// recursively. Returns true if the walk should be aborted
-func recursiveWalk(n *node, path string) bool {
-	if n.route != nil && n.route.Name == path {
-		return true
-	}
-
-	for _, e := range n.edges {
-		if recursiveWalk(e.node, path) {
-			return true
-		}
-	}
-
-	return false
 }
 
 func maxParamsInPath(s string) int {

@@ -32,7 +32,6 @@ func extractParameter(par string) string {
 	return paramTester.FindStringSubmatch(par)[1]
 }
 
-//
 type Param struct {
 	Key   string
 	Value string
@@ -42,7 +41,7 @@ type Params []Param
 
 //Route class
 type Route struct {
-	Name      string
+	Name    string
 	Handler func(ctx context.Context) (interface{}, context.Context)
 	// factory   func() Controller
 	routeType routeType
@@ -83,9 +82,8 @@ func (route Route) match(url string) bool {
 	return false
 }
 
-//Router class
 type Router struct {
-	tree              *tree
+	tree *tree
 }
 
 func NewRouter() Router {
@@ -94,11 +92,14 @@ func NewRouter() Router {
 	return router
 }
 
+// Creates the path - route relationship.
+// handler is invoked once the route is found
 func (router *Router) SetRoute(path string, handler func(ctx context.Context) (interface{}, context.Context)) {
 	route := NewRoute(path, handler)
 	router.tree.insert(&route)
 }
 
+// Given the path it returns the assigned route from the radix tree
 func (router *Router) RouteForPath(ctx context.Context, path string) (context.Context, error, interface{}) {
 	route, params := router.tree.findRoute(path)
 

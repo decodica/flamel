@@ -12,7 +12,7 @@ type Cors struct {
 	//seconds to cache the response
 	MaxAgeSeconds int
 	//Accelerated Mobile Page support
-	amp bool
+	amp      bool
 	ampFetch map[string]bool
 }
 
@@ -63,10 +63,9 @@ func (c *Cors) HandleOptions(w http.ResponseWriter, origin string) bool {
 	* 2. *.amp.cloudflare.com
 	* 3. our origin
 	* for reference: https://github.com/ampproject/amphtml/blob/master/spec/amp-cors-requests.md
-	*/
-	if c.amp && (
-		origin[len(origin) - len(ampAllowedOriginAmpproject):] == ampAllowedOriginAmpproject ||
-			origin[len(origin) - len(ampAllowedOriginCloudflare):] == ampAllowedOriginCloudflare) {
+	 */
+	if c.amp && (origin[len(origin)-len(ampAllowedOriginAmpproject):] == ampAllowedOriginAmpproject ||
+		origin[len(origin)-len(ampAllowedOriginCloudflare):] == ampAllowedOriginCloudflare) {
 
 		allowed = true
 		w.Header().Set("Access-Control-Allow-Origin", origin)
@@ -102,7 +101,7 @@ func (c *Cors) ValidateAMP(w http.ResponseWriter, source string) error {
 	for _, v := range c.origins {
 		if v == source {
 			w.Header().Set("AMP-Access-Control-Allow-Source-Origin", source)
-			return nil;
+			return nil
 		}
 	}
 	return fmt.Errorf("invalid AMP origin request! Source is: %s", source)
@@ -122,5 +121,3 @@ func convertToHeaderString(values []string) string {
 
 	return s
 }
-
-

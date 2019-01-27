@@ -65,7 +65,6 @@ func mapStructureLocked(t reflect.Type, s *encodedStruct) {
 		field := t.Field(i)
 		fType := field.Type
 
-
 		//skip unexported fields
 		if field.PkgPath != "" {
 			continue

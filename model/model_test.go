@@ -7,18 +7,17 @@ import (
 	"testing"
 )
 
-
 type Entity struct {
 	Model
-	Name string
-	Num int
-	Child Child
+	Name       string
+	Num        int
+	Child      Child
 	EmptyChild EmptyChild `model:"zero"`
 }
 
 type Child struct {
 	Model
-	Name string
+	Name       string
 	Grandchild Grandchild
 }
 
@@ -56,7 +55,6 @@ func TestIndexing(t *testing.T) {
 	if err != nil {
 		t.Fatal(err.Error())
 	}
-
 
 	err = Read(ctx, &entity)
 	if err != nil {
@@ -144,7 +142,7 @@ func TestModel(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if len(dst) != total - find - 1 {
+	if len(dst) != total-find-1 {
 		t.Fatalf("invalid number of data returned. Count is %d", len(dst))
 	}
 

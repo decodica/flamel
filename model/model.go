@@ -1,13 +1,10 @@
 package model
 
 import (
+	"context"
 	"encoding/gob"
-	"errors"
 	"fmt"
-	"golang.org/x/net/context"
 	"google.golang.org/appengine/datastore"
-	gaelog "google.golang.org/appengine/log"
-	"google.golang.org/appengine/memcache"
 	"reflect"
 	"strings"
 )
@@ -25,6 +22,19 @@ type modelable interface {
 	setModel(m Model)
 }
 
+//represents a child struct modelable.
+//reference.Key and Modelable.getModel().Key might differ
+type reference struct {
+	Modelable modelable
+	Key       *datastore.Key
+	Ancestor  bool
+}
+
+type structure struct {
+	//encoded struct represents the mapping of the struct
+	*encodedStruct
+}
+
 type Model struct {
 	//Note: this is necessary to allow simple implementation of memcache encoding and coding
 	//else we get the all unexported fields error from Gob package
@@ -40,17 +50,12 @@ type Model struct {
 	modelable modelable `model:"-"`
 }
 
-//represents a child struct modelable.
-//reference.Key and Modelable.getModel().Key might differ
-type reference struct {
-	Modelable modelable
-	Key       *datastore.Key
-	Ancestor  bool
+func (model *Model) getModel() *Model {
+	return model
 }
 
-type structure struct {
-	//encoded struct represents the mapping of the struct
-	*encodedStruct
+func (model *Model) setModel(m Model) {
+	*model = m
 }
 
 func IsEmpty(m modelable) bool {
@@ -61,15 +66,60 @@ func IsEmpty(m modelable) bool {
 	return model.Key == nil && isZero(model.modelable)
 }
 
-//Model satisfies modelable
-//Returns the current Model.
-func (model *Model) getModel() *Model {
-	return model
+//Loads values from the datastore for the entity with the given id.
+//Entity types must be the same with m and the entity whose id is id
+func FromIntID(ctx context.Context, m modelable, id int64, ancestor modelable) error {
+	model := m.getModel()
+	if !model.registered {
+		index(m)
+	}
+
+	var ancKey *datastore.Key = nil
+
+	if ancestor != nil {
+		if ancestor.getModel().Key == nil {
+			return fmt.Errorf("ancestor %v has no Key", ancestor)
+		}
+		ancKey = ancestor.getModel().Key
+	}
+
+	model.Key = datastore.NewKey(ctx, model.structName, "", id, ancKey)
+	return Read(ctx, m)
 }
 
-//Set the value of m into the Model
-func (model *Model) setModel(m Model) {
-	*model = m
+//Loads values from the datastore for the entity with the given string id.
+//Entity types must be the same with m and the entity whos id is id
+func FromStringID(ctx context.Context, m modelable, id string, ancestor modelable) error {
+	model := m.getModel()
+	if !model.registered {
+		index(m)
+	}
+
+	var ancKey *datastore.Key = nil
+
+	if ancestor != nil {
+		if ancestor.getModel().Key == nil {
+			return fmt.Errorf("ancestor %v has no Key", ancestor)
+		}
+		ancKey = ancestor.getModel().Key
+	}
+
+	model.Key = datastore.NewKey(ctx, model.structName, id, 0, ancKey)
+	return Read(ctx, m)
+}
+
+func FromEncodedKey(ctx context.Context, m modelable, skey string) error {
+	model := m.getModel()
+
+	key, err := datastore.DecodeKey(skey)
+
+	if err != nil {
+		return err
+	}
+
+	model.Key = key
+
+	return Read(ctx, m)
 }
 
 //returns -1 if the model doesn't have an id
@@ -110,74 +160,14 @@ func (model *Model) Load(props []datastore.Property) error {
 	return fromPropertyList(model.modelable, props)
 }
 
-func modelOf(src interface{}) *Model {
-	m, ok := src.(modelable)
-	if ok {
-		return m.getModel()
-	}
+// Indexing maps the modelable to a linked-list-like structure.
+// The indexing operation finds the modelable references and stores them into an instance map.
+// Indexing keeps the keys in case of a reindex
+// Indexing should not overwrite a model if it already exists.
+// This method is called often, even for recursive operations.
+// It is important to benchmark and optimize this code in order to not degrade performances
+// of reads and writes calls to the Datastore.
 
-	//if src is not a modelable we check if it is a slice of modelables
-	dstv := reflect.ValueOf(src)
-
-	var val reflect.Value
-
-	if dstv.Kind() == reflect.Ptr {
-		val = dstv.Elem()
-		if val.Kind() == reflect.Slice {
-			typ := val.Type().Elem()
-			val = reflect.New(typ.Elem())
-		} else if val.Kind() == reflect.Struct {
-			return modelOf(val)
-		} else {
-			return nil
-		}
-	} else if dstv.Kind() == reflect.Slice {
-		typ := reflect.TypeOf(src).Elem()
-		val = reflect.New(typ.Elem())
-	} else {
-		//not a container and not a modelable, return nil
-		return nil
-	}
-
-	m, ok = val.Interface().(modelable)
-	if ok {
-		index(m)
-		return m.getModel()
-	}
-
-	return nil
-}
-
-//returns true if the model has stale references
-//todo: control validity - this may be incorrect with equality
-func (model *Model) hasStaleReferences() bool {
-	m := model.modelable
-
-	mv := reflect.Indirect(reflect.ValueOf(m))
-
-	for k := range model.references {
-		field := mv.Field(k)
-		ref := model.references[k]
-		if field.Interface() != ref.Modelable {
-			return true
-		}
-	}
-	return false
-}
-
-func (reference *reference) isStale() bool {
-	return reference.Modelable.getModel().Key != reference.Key
-}
-
-//Indexing maps the modelable to a linked-list-like structure.
-//The indexing operation finds the modelable references and stores them into an instance map.
-//Indexing keeps the keys in case of a reindex
-//Indexing should not overwrite a model if it already exists.
-//This method is called often, even for recursive operations.
-//It is important to benchmark and optimize this code in order to not degrade performances
-//of reads and writes calls to the Datastore.
-
-//Indexing of cached item takes roughly 20k nanoseconds (0.020ms)
 func index(m modelable) {
 	mType := reflect.TypeOf(m).Elem()
 	obj := reflect.ValueOf(m).Elem()
@@ -302,425 +292,62 @@ func index(m modelable) {
 
 	m.setModel(*model)
 
-	//register the modelable to the gob decoder
+	// register the modelable to the gob decoder
 	gob.Register(model.modelable)
 }
 
-func createWithOptions(ctx context.Context, m modelable, opts *CreateOptions) error {
-	model := m.getModel()
-
-	//if the root model has a Key then this is the wrong operation
-	if model.Key != nil {
-		return errors.New("data has already been created")
+// Returns a pointer to the Model the container is holding
+func modelOf(src interface{}) *Model {
+	m, ok := src.(modelable)
+	if ok {
+		return m.getModel()
 	}
 
-	var ancKey *datastore.Key = nil
-	//we iterate through the model references.
-	//if a reference has its own Key we use it as a value in the root entity
-	for k := range model.references {
-		ref := model.references[k]
-		rm := ref.Modelable.getModel()
-		if ref.Key != nil {
-			//this can't happen because we are in create, thus the root model can't have a Key
-			//and can't have its reference's Key populated
-			return errors.New("create called with a non-nil reference map")
+	//if src is not a modelable we check if it is a slice of modelables
+	dstv := reflect.ValueOf(src)
+
+	var val reflect.Value
+
+	if dstv.Kind() == reflect.Ptr {
+		val = dstv.Elem()
+		if val.Kind() == reflect.Slice {
+			typ := val.Type().Elem()
+			val = reflect.New(typ.Elem())
+		} else if val.Kind() == reflect.Struct {
+			return modelOf(val)
 		} else {
-			//case is that the reference has been loaded from the datastore
-			//we update the reference values using the reference Key
-			//then we update the root reference map Key
-			if rm.Key != nil {
-				err := updateReference(ctx, &ref, rm.Key)
-				if err != nil {
-					return err
-				}
-			} else if rm.skipIfZero && isZero(ref.Modelable) {
-				continue
-			} else {
-				err := createReference(ctx, &ref)
-				if err != nil {
-					return err
-				}
-			}
+			return nil
 		}
-		if ref.Ancestor {
-			ancKey = ref.Key
-		}
-		model.references[k] = ref
-	}
-
-	newKey := datastore.NewKey(ctx, model.structName, opts.stringId, opts.intId, ancKey)
-	key, err := datastore.Put(ctx, newKey, m)
-	if err != nil {
-		return err
-	}
-	model.Key = key
-
-	// if the model is searchable, update the search index with the new values
-	if model.searchable {
-		err = searchPut(ctx, model, model.Name())
-	}
-
-	return err
-}
-
-//creates a datastore entity and stores the Key into the model field
-func create(ctx context.Context, m modelable) error {
-	opts := NewCreateOptions()
-	return createWithOptions(ctx, m, &opts)
-}
-
-func updateReference(ctx context.Context, ref *reference, key *datastore.Key) (err error) {
-	model := ref.Modelable.getModel()
-
-	//we iterate through the references of the current model
-	for k, _ := range model.references {
-		r := model.references[k]
-		rm := r.Modelable.getModel()
-		//We check if the parent has a Key related to the reference.
-		//If it does we use the Key provided by the parent to update the children
-		if r.Key != nil {
-			err := updateReference(ctx, &r, r.Key)
-			if err != nil {
-				return err
-			}
-		} else {
-			//else, if the parent doesn't have the Key we must check the children
-			if rm.Key != nil {
-				//the child was loaded and then assigned to the parent: update the children
-				//and make the parent point to it
-				err := updateReference(ctx, &r, rm.Key)
-				if err != nil {
-					return err
-				}
-			} else if rm.skipIfZero && isZero(r.Modelable) {
-				// the child is empty and must be kept empty
-				continue
-			} else {
-				//neither the parent and the children specify a Key.
-				//We create the children and update the parent's Key
-				err := createReference(ctx, &r)
-				if err != nil {
-					return err
-				}
-			}
-		}
-
-		model.references[k] = r
-	}
-
-	//we align ref and parent Key
-	model.Key = key
-	ref.Key = key
-
-	_, err = datastore.Put(ctx, key, ref.Modelable)
-
-	if err != nil {
-		return err
-	}
-
-	// if the model is searchable, update the search index with the new values
-	if model.searchable {
-		err = searchPut(ctx, model, model.Name())
-	}
-	return err
-}
-
-//creates a reference
-func createReference(ctx context.Context, ref *reference) (err error) {
-	err = create(ctx, ref.Modelable)
-
-	if err != nil {
-		return err
-	}
-
-	defer func() {
-		if err == nil {
-			ref.Key = ref.Modelable.getModel().Key
-		}
-	}()
-
-	return nil
-}
-
-func read(ctx context.Context, m modelable) error {
-	model := m.getModel()
-
-	if model.Key == nil {
+	} else if dstv.Kind() == reflect.Slice {
+		typ := reflect.TypeOf(src).Elem()
+		val = reflect.New(typ.Elem())
+	} else {
+		// not a container and not a modelable, return nil
 		return nil
-		// return errors.New(fmt.Sprintf("can't populate struct %s. Model has no Key", reflect.TypeOf(m).Elem().Name()))
 	}
 
-	err := datastore.Get(ctx, model.Key, m)
-
-	if err != nil {
-		return err
+	m, ok = val.Interface().(modelable)
+	if ok {
+		index(m)
+		return m.getModel()
 	}
+
+	return nil
+}
+
+//returns true if the model has stale references
+//todo: control validity - this may be incorrect with equality
+func (model *Model) hasStaleReferences() bool {
+	m := model.modelable
+
+	mv := reflect.Indirect(reflect.ValueOf(m))
 
 	for k := range model.references {
+		field := mv.Field(k)
 		ref := model.references[k]
-		rm := ref.Modelable.getModel()
-		err := read(ctx, ref.Modelable)
-		if err != nil {
-			return err
-		}
-		ref.Key = rm.Key
-		model.references[k] = ref
-	}
-
-	return nil
-}
-
-//updates the given modelable
-//iterates through the modelable reference.
-//if the reference has a Key
-func update(ctx context.Context, m modelable) error {
-	model := m.getModel()
-
-	if model.Key == nil {
-		return fmt.Errorf("can't update modelable %v. Missing Key", m)
-	}
-
-	for k, _ := range model.references {
-		ref := model.references[k]
-		rm := ref.Modelable.getModel()
-
-		if rm.Key != nil {
-			err := updateReference(ctx, &ref, rm.Key)
-			if err != nil {
-				return err
-			}
-		} else if ref.Key != nil {
-			// in this case a new reference has been assigned in place of an empty reference
-			err := updateReference(ctx, &ref, ref.Key)
-			if err != nil {
-				return err
-			}
-		} else if rm.skipIfZero && isZero(ref.Modelable) {
-			// skip if the ref must be kept empty
-			continue
-		} else {
-			// else create it
-			err := createReference(ctx, &ref)
-			if err != nil {
-				return err
-			}
-		}
-
-		model.references[k] = ref
-	}
-
-	Key, err := datastore.Put(ctx, model.Key, m)
-
-	if err != nil {
-		return err
-	}
-
-	model.Key = Key
-
-	return nil
-}
-
-func del(ctx context.Context, m modelable) (err error) {
-	model := m.getModel()
-
-	if model.Key == nil {
-		return errors.New("can't delete struct . The Key is nil")
-	}
-
-	for k, _ := range model.references {
-		ref := model.references[k]
-		err = del(ctx, ref.Modelable)
-		if err != nil {
-			return err
+		if field.Interface() != ref.Modelable {
+			return true
 		}
 	}
-
-	err = datastore.Delete(ctx, model.Key)
-
-	return err
-}
-
-type CreateOptions struct {
-	stringId string
-	intId    int64
-}
-
-func NewCreateOptions() CreateOptions {
-	return CreateOptions{}
-}
-
-func (opts *CreateOptions) WithStringId(id string) {
-	opts.intId = 0
-	opts.stringId = id
-}
-
-func (opts *CreateOptions) WithIntId(id int64) {
-	opts.stringId = ""
-	opts.intId = id
-}
-
-func CreateWithOptions(ctx context.Context, m modelable, copts *CreateOptions) (err error) {
-	model := m.getModel()
-
-	if !model.registered {
-		index(m)
-	} else if model.hasStaleReferences() {
-		index(m)
-	}
-
-	defer func() {
-		if err == nil {
-			err = saveInMemcache(ctx, m)
-			if err != nil {
-				gaelog.Errorf(ctx, "error saving items in memcache: %v", err)
-			}
-		}
-	}()
-
-	opts := datastore.TransactionOptions{}
-	opts.XG = true
-	opts.Attempts = 1
-	err = datastore.RunInTransaction(ctx, func(ctx context.Context) error {
-		return createWithOptions(ctx, m, copts)
-	}, &opts)
-
-	return err
-}
-
-//Reads data from a modelable and writes it to the datastore as an entity with a new Key.
-func Create(ctx context.Context, m modelable) (err error) {
-	return CreateWithOptions(ctx, m, new(CreateOptions))
-}
-
-//Reads data from a modelable and writes it into the corresponding entity of the datastore.
-//If a reference is read from the storage and then assigned to the root modelable
-//the root modelable will point to the loaded entity
-//If a reference is newly created its value will be updated accordingly to the model
-func Update(ctx context.Context, m modelable) (err error) {
-	model := m.getModel()
-	if !model.registered {
-		index(m)
-		//use elseif so we avoid checking for stale refs since the model has been registered one line above
-	} else if model.hasStaleReferences() {
-		index(m)
-	}
-
-	defer func() {
-		if err == nil {
-			err = saveInMemcache(ctx, m)
-			if err != nil {
-				gaelog.Errorf(ctx, "error saving items in memcache: %v", err)
-			}
-		}
-	}()
-
-	opts := datastore.TransactionOptions{}
-	opts.XG = true
-	opts.Attempts = 1
-	err = datastore.RunInTransaction(ctx, func(ctx context.Context) error {
-		return update(ctx, m)
-	}, &opts)
-
-	return err
-}
-
-//Loads values from the datastore for the entity with the given id.
-//Entity types must be the same with m and the entity whose id is id
-func FromIntID(ctx context.Context, m modelable, id int64, ancestor modelable) error {
-	model := m.getModel()
-	if !model.registered {
-		index(m)
-	}
-
-	var ancKey *datastore.Key = nil
-
-	if ancestor != nil {
-		if ancestor.getModel().Key == nil {
-			return fmt.Errorf("ancestor %v has no Key", ancestor)
-		}
-		ancKey = ancestor.getModel().Key
-	}
-
-	model.Key = datastore.NewKey(ctx, model.structName, "", id, ancKey)
-	return Read(ctx, m)
-}
-
-//Loads values from the datastore for the entity with the given string id.
-//Entity types must be the same with m and the entity whos id is id
-func FromStringID(ctx context.Context, m modelable, id string, ancestor modelable) error {
-	model := m.getModel()
-	if !model.registered {
-		index(m)
-	}
-
-	var ancKey *datastore.Key = nil
-
-	if ancestor != nil {
-		if ancestor.getModel().Key == nil {
-			return fmt.Errorf("ancestor %v has no Key", ancestor)
-		}
-		ancKey = ancestor.getModel().Key
-	}
-
-	model.Key = datastore.NewKey(ctx, model.structName, id, 0, ancKey)
-	return Read(ctx, m)
-}
-
-func FromEncodedKey(ctx context.Context, m modelable, skey string) error {
-	model := m.getModel()
-
-	key, err := datastore.DecodeKey(skey)
-
-	if err != nil {
-		return err
-	}
-
-	model.Key = key
-
-	return Read(ctx, m)
-}
-
-//Reads data from the datastore and writes them into the modelable.
-func Read(ctx context.Context, m modelable) (err error) {
-	model := m.getModel()
-	if !model.registered {
-		index(m)
-	}
-
-	opts := datastore.TransactionOptions{}
-	opts.XG = true
-	opts.Attempts = 1
-
-	err = loadFromMemcache(ctx, m)
-
-	if err == nil {
-		return err
-	}
-
-	err = datastore.RunInTransaction(ctx, func(ctx context.Context) error {
-		return read(ctx, m)
-	}, &opts)
-
-	return err
-}
-
-func Delete(ctx context.Context, m modelable) (err error) {
-	defer func() {
-		if err == nil {
-			err = deleteFromMemcache(ctx, m)
-			if err != nil && err != memcache.ErrCacheMiss {
-				gaelog.Errorf(ctx, "error deleting items from memcache: %v", err)
-			}
-		}
-	}()
-
-	opts := datastore.TransactionOptions{}
-	opts.Attempts = 1
-	opts.XG = true
-
-	err = datastore.RunInTransaction(ctx, func(ctx context.Context) error {
-		return del(ctx, m)
-	}, &opts)
-
-	return err
+	return false
 }

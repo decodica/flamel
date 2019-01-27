@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"google.golang.org/appengine/aetest"
 	"google.golang.org/appengine/memcache"
+	"reflect"
 	"testing"
 )
 
@@ -152,5 +153,71 @@ func TestModel(t *testing.T) {
 		if entity.Num != k {
 			t.Fatalf("invalid error. entity at index %d has value %d.", idx, entity.Num)
 		}
+	}
+}
+
+func TestStaleReferences(t *testing.T) {
+	ctx, done, err := aetest.NewContext()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer done()
+
+	entity := Entity{}
+	entity.Name = "Entity"
+	err = Create(ctx, &entity)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	stale := entity.mustReindex()
+	if stale {
+		t.Fatal("entity can't have stale references, it has not been changed")
+	}
+
+	child := Child{}
+	child.Name = "Enzo"
+	entity.Child = child
+	stale = entity.mustReindex()
+	if !stale {
+		t.Fatal("entity should have stale references. Child has been changed")
+	}
+
+}
+
+func BenchmarkMapStructureLocked(b *testing.B) {
+	entity := Entity{}
+	typ := reflect.TypeOf(entity)
+	structure := newEncodedStruct()
+	for n:= 0; n < b.N; n++ {
+		mapStructureLocked(typ, structure)
+	}
+}
+
+func BenchmarkIsEmpty(b *testing.B) {
+	entity := Entity{}
+	for n := 0; n < b.N; n++ {
+		IsEmpty(&entity)
+	}
+}
+
+func BenchmarkIndexing(b *testing.B) {
+	for n := 0; n < b.N; n++ {
+		entity := Entity{}
+		index(&entity)
+	}
+}
+
+func BenchmarkIndexingSimple(b *testing.B) {
+	for n := 0; n < b.N; n++ {
+		gc := Grandchild{}
+		index(&gc)
+	}
+}
+
+func BenchmarkReindexing(b *testing.B) {
+	entity := Entity{}
+	for n := 0; n < b.N; n++ {
+		index(&entity)
 	}
 }

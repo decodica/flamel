@@ -175,7 +175,7 @@ func index(m modelable) {
 	name := mType.Name()
 
 	model := m.getModel()
-	Key := model.Key
+	key := model.Key
 
 	//check if the modelable structure has been already mapped
 	if model.structure == nil {
@@ -186,7 +186,7 @@ func index(m modelable) {
 	//in case it was previously pointing to the old one
 	model.modelable = m
 	model.registered = true
-	model.Key = Key
+	model.Key = key
 
 	//we assign the structure to the model.
 	//if we already mapped the same struct earlier we get it from the cache
@@ -335,19 +335,38 @@ func modelOf(src interface{}) *Model {
 	return nil
 }
 
-//returns true if the model has stale references
-//todo: control validity - this may be incorrect with equality
-func (model *Model) hasStaleReferences() bool {
-	m := model.modelable
+func (model *Model) mustReindex() bool {
 
-	mv := reflect.Indirect(reflect.ValueOf(m))
-
-	for k := range model.references {
-		field := mv.Field(k)
-		ref := model.references[k]
-		if field.Interface() != ref.Modelable {
+	for _, ref := range model.references {
+		if m := ref.Modelable.getModel(); m.Key != ref.Key || !m.registered {
 			return true
 		}
 	}
 	return false
 }
+
+// returns true if the model has stale references.
+// A reference is stale if its parent model points to a reference which has been changed
+// This can happen when the underlying modelable of a reference is reassigned with a different struct
+// usually after a read and a reassignment of the modelable
+// model.Read(ctx, &entity)
+// entity.Child = Child{}
+/*func (model *Model) hasStaleReferences() bool {
+	//m := model.modelable
+
+	//mv := reflect.Indirect(reflect.ValueOf(m))
+
+	for k := range model.references {
+		///field := mv.Field(k)
+		ref := model.references[k]
+
+		if ref.Modelable.getModel().Key != ref.Key {
+			return true
+		}
+		// faddr := field.Addr().Interface()
+		// if faddr != ref.Modelable {
+			// return true
+		// }
+	}
+	return false
+}*/

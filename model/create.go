@@ -28,10 +28,7 @@ func (opts *CreateOptions) WithIntId(id int64) {
 
 func CreateWithOptions(ctx context.Context, m modelable, copts *CreateOptions) (err error) {
 	model := m.getModel()
-
-	if !model.registered {
-		index(m)
-	} else if model.hasStaleReferences() {
+	if !model.mustReindex() {
 		index(m)
 	}
 

@@ -8,7 +8,7 @@ import (
 // Reads data from the datastore and writes them into the modelable.
 func Read(ctx context.Context, m modelable) (err error) {
 	model := m.getModel()
-	if !model.registered {
+	if model.mustReindex() {
 		index(m)
 	}
 

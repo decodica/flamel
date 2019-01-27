@@ -12,10 +12,7 @@ import (
 // If a reference is newly created its value will be updated accordingly to the model
 func Update(ctx context.Context, m modelable) (err error) {
 	model := m.getModel()
-	if !model.registered {
-		index(m)
-		//use elseif so we avoid checking for stale refs since the model has been registered one line above
-	} else if model.hasStaleReferences() {
+	if !model.mustReindex() {
 		index(m)
 	}
 

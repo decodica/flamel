@@ -100,39 +100,34 @@ func mapStructureLocked(t reflect.Type, s *encodedStruct) {
 				break
 			}
 			fallthrough
-		case reflect.Struct:
-			//we already mapped the struct, skip further computations
-			//else we map the other struct
-			if _, ok := encodedStructs[fType]; ok {
-				sValue.childStruct = encodedStructs[fType]
-				sValue.childStruct.structName = sName
-				break
-			}
-
-			childStruct := newEncodedStruct(sName)
-			childStruct.skipIfZero = tagName == tagZero
-			childStruct.searchable = tagName == tagSearch
-			if reflect.PtrTo(fType).Implements(typeOfModelable) {
-				s.referencesIdx = append(s.referencesIdx, i)
-			}
-			sValue.childStruct = childStruct
-			mapStructureLocked(fType, childStruct)
-			break
 		case reflect.Ptr:
 			//if we have a pointer we map the value it points to
 			fieldElem := fType.Elem()
-			if fieldElem.Kind() == reflect.Struct {
-				childStruct := newEncodedStruct(sName)
-				childStruct.skipIfZero = tagName == tagZero
-				childStruct.searchable = tagName == tagSearch
-				if fType.Implements(typeOfModelable) {
-					s.referencesIdx = append(s.referencesIdx, i)
-				}
-				sValue.childStruct = childStruct
-				mapStructureLocked(fieldElem, childStruct)
+			if fieldElem.Kind() != reflect.Struct {
 				break
 			}
+			fType = fieldElem
 			fallthrough
+		case reflect.Struct:
+			//we already mapped the struct, skip further computations
+			//else we map the other struct
+			cs, saved := encodedStructs[fType]
+			if saved {
+				sValue.childStruct = cs
+				sValue.childStruct.structName = sName
+			} else {
+				sValue.childStruct = newEncodedStruct(sName)
+			}
+
+			sValue.childStruct.skipIfZero = tagName == tagZero
+			sValue.childStruct.searchable = tagName == tagSearch
+			if reflect.PtrTo(fType).Implements(typeOfModelable) {
+				s.referencesIdx = append(s.referencesIdx, i)
+			}
+
+			if !saved {
+				mapStructureLocked(fType, sValue.childStruct)
+			}
 		case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
 			fallthrough
 		case reflect.Bool:

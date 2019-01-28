@@ -15,6 +15,7 @@ const tagDomain string = "model"
 const tagNoindex string = "noindex"
 const tagZero string = "zero"
 const tagAncestor string = "ancestor"
+const tagSkip string = "-"
 
 type modelable interface {
 	getModel() *Model

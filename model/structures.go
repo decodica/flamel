@@ -79,6 +79,10 @@ func mapStructureLocked(t reflect.Type, s *encodedStruct) {
 		tags := strings.Split(field.Tag.Get(tagDomain), ",")
 		tagName := tags[0]
 
+		if tagName == tagSkip {
+			continue
+		}
+
 		sName := field.Name
 		sValue := encodedField{index: i}
 		switch fType.Kind() {
@@ -154,7 +158,15 @@ func encodeStruct(s interface{}, props *[]datastore.Property, multiple bool, cod
 	for i := 0; i < sType.NumField(); i++ {
 		field := sType.Field(i)
 
+		if field.Type == typeOfModel {
+			continue
+		}
+
 		if field.Tag.Get("datastore") == "-" {
+			continue
+		}
+
+		if field.Tag.Get("model") == "-" {
 			continue
 		}
 
@@ -469,6 +481,10 @@ func toPropertyList(modelable modelable) ([]datastore.Property, error) {
 		}
 
 		if field.Tag.Get("datastore") == "-" {
+			continue
+		}
+
+		if field.Tag.Get("model") == tagSkip {
 			continue
 		}
 

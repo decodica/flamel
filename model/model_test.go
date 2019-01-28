@@ -109,6 +109,48 @@ func TestUpdate(t *testing.T) {
 	}
 }
 
+func TestDelete(t *testing.T) {
+
+	ctx, done, err := aetest.NewContext()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer done()
+
+	// test correct indexing
+	entity := Entity{}
+	entity.Name = "Enzo"
+	entity.Child.Name = "child"
+	entity.Child.Grandchild.GrandchildNum = 10
+
+	err = Create(ctx, &entity)
+	if err != nil {
+		t.Fatal(err.Error())
+	}
+
+	err = Delete(ctx, &(entity.Child), &entity)
+	if err != nil {
+		t.Fatalf(err.Error())
+	}
+
+	q := NewQuery((*Child)(nil))
+	q = q.WithField("Name = ", "child")
+	err = q.First(ctx, &entity.Child)
+	if err == nil {
+		t.Fatalf("child must have been deleted. Found child %+v", entity.Child)
+	}
+
+	t.Logf("can't fine child: %s", err.Error())
+
+	e := Entity{}
+	q = NewQuery(&e)
+	q = q.WithField("Name =", "Enzo")
+	err = q.First(ctx, &e)
+	if err != nil {
+		t.Fatalf("can't find entity with name Delete: %s", err.Error())
+	}
+}
+
 func TestModel(t *testing.T) {
 
 	ctx, done, err := aetest.NewContext()

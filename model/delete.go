@@ -2,18 +2,21 @@ package model
 
 import (
 	"context"
+	"github.com/pkg/errors"
 	"google.golang.org/appengine/datastore"
 	"google.golang.org/appengine/memcache"
+	"reflect"
 )
 
-func Delete(ctx context.Context, m modelable) (err error) {
+// recursively deletes a modelable and all its references
+func Clear(ctx context.Context, m modelable) (err error) {
 
 	opts := datastore.TransactionOptions{}
 	opts.Attempts = 1
 	opts.XG = true
 
 	err = datastore.RunInTransaction(ctx, func(ctx context.Context) error {
-		return del(ctx, m)
+		return clear(ctx, m)
 	}, &opts)
 
 	if err == nil {
@@ -25,7 +28,7 @@ func Delete(ctx context.Context, m modelable) (err error) {
 	return err
 }
 
-func del(ctx context.Context, m modelable) (err error) {
+func clear(ctx context.Context, m modelable) (err error) {
 	model := m.getModel()
 
 	if model.Key == nil {
@@ -34,7 +37,7 @@ func del(ctx context.Context, m modelable) (err error) {
 
 	for k := range model.references {
 		ref := model.references[k]
-		err = del(ctx, ref.Modelable)
+		err = clear(ctx, ref.Modelable)
 		if err != nil {
 			return err
 		}
@@ -43,4 +46,55 @@ func del(ctx context.Context, m modelable) (err error) {
 	err = datastore.Delete(ctx, model.Key)
 
 	return err
+}
+
+
+// deletes a single reference
+func Delete(ctx context.Context, ref modelable, parent modelable) (err error) {
+
+	child := ref.getModel()
+	if child.Key == nil {
+		return errors.Errorf("reference %s has a nil key", child.Name())
+	}
+
+	err = datastore.Delete(ctx, child.Key)
+	if err == nil {
+		if err = deleteFromMemcache(ctx, child); err != nil && err != memcache.ErrCacheMiss {
+			return err
+		}
+	}
+
+	if parent == nil {
+		return nil
+	}
+
+	// handle the case where the reference is single
+	index(parent)
+
+	idx := -1
+	for _, c := range parent.getModel().references {
+		if c.Modelable == ref {
+			idx = c.idx
+			break
+		}
+	}
+
+	if idx == -1 {
+		return errors.Errorf("%s is not a reference of %s", ref.getModel().Name(), parent.getModel().Name())
+	}
+
+	ctype := reflect.TypeOf(ref).Elem()
+	newref := reflect.New(ctype).Interface().(modelable)
+
+	pv := reflect.ValueOf(parent).Elem()
+	pv.Field(idx).Set(reflect.ValueOf(newref).Elem())
+
+	_, err = datastore.Put(ctx, parent.getModel().Key, parent)
+	if err != nil {
+		return err
+	}
+
+	index(parent)
+
+	return saveInMemcache(ctx, parent)
 }

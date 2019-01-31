@@ -133,7 +133,7 @@ func (model *searchable) Save() ([]search.Field, *search.DocumentMetadata, error
 		case _time, _geopoint:
 			sf.Value = field.Elem()
 		case _key:
-			key := model.references[desc.index].Key
+			key := model.referenceAtIndex(desc.index).Key
 			sf.Value = search.Atom(key.Encode())
 		}
 	}

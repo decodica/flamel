@@ -83,6 +83,10 @@ func mapStructureLocked(t reflect.Type, s *encodedStruct) {
 			continue
 		}
 
+		if !s.searchable && tagName == tagSearch {
+			s.searchable = true
+		}
+
 		sName := field.Name
 		sValue := encodedField{index: i}
 		switch fType.Kind() {
@@ -120,7 +124,6 @@ func mapStructureLocked(t reflect.Type, s *encodedStruct) {
 			}
 
 			sValue.childStruct.skipIfZero = tagName == tagZero
-			sValue.childStruct.searchable = tagName == tagSearch
 			if reflect.PtrTo(fType).Implements(typeOfModelable) {
 				s.referencesIdx = append(s.referencesIdx, i)
 			}

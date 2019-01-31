@@ -38,7 +38,7 @@ Filter functions
 */
 func (q *Query) WithModelable(field string, ref modelable) *Query {
 	refm := ref.getModel()
-	if !refm.registered {
+	if !refm.isRegistered() {
 		panic(fmt.Errorf("modelable reference is not registered %+v", ref))
 	}
 

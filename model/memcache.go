@@ -31,7 +31,7 @@ func saveInMemcache(ctx context.Context, m modelable) (err error) {
 	model := m.getModel()
 
 	//a modelable must be registered to be saved in memcache
-	if !model.registered {
+	if !model.isRegistered() {
 		return fmt.Errorf("modelable %v is not registered", m)
 	}
 

@@ -72,17 +72,34 @@ func (model Model) referenceAtIndex(idx int) *reference {
 
 func IsEmpty(m modelable) bool {
 	model := m.getModel()
-	if !model.registered {
+	if !model.isRegistered() {
 		index(m)
 	}
 	return model.Key == nil && isZero(model.modelable)
+}
+
+// recursively checks if the references of the model have been registered.
+// todo: re-structure the model to increase performance
+func (model Model) isRegistered() bool {
+	if !model.registered {
+		return false
+	}
+
+	for _, ref := range model.references {
+		rm := ref.Modelable.getModel()
+		if !rm.isRegistered() {
+			return false
+		}
+	}
+
+	return true
 }
 
 //Loads values from the datastore for the entity with the given id.
 //Entity types must be the same with m and the entity whose id is id
 func FromIntID(ctx context.Context, m modelable, id int64, ancestor modelable) error {
 	model := m.getModel()
-	if !model.registered {
+	if !model.isRegistered() {
 		index(m)
 	}
 
@@ -103,7 +120,7 @@ func FromIntID(ctx context.Context, m modelable, id int64, ancestor modelable) e
 //Entity types must be the same with m and the entity whos id is id
 func FromStringID(ctx context.Context, m modelable, id string, ancestor modelable) error {
 	model := m.getModel()
-	if !model.registered {
+	if !model.isRegistered() {
 		index(m)
 	}
 
@@ -256,7 +273,7 @@ func index(m modelable) {
 			// register the reference if not registered
 			// this can happen if a reference allows to be zeroed and the parent model has been read
 			// from the datastore
-			if !ref.Modelable.getModel().registered {
+			if !ref.Modelable.getModel().isRegistered() {
 				index(ref.Modelable)
 				continue
 			}

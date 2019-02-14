@@ -71,33 +71,23 @@ const (
 var instance *mage
 var once sync.Once
 
-var bucketName string
-
-func GetBucketName(c context.Context) (string, error) {
-	if appengine.IsDevAppServer() {
-		appid := appengine.AppID(c)
-		return "staging." + appid + ".appspot.com", nil
-	}
-	var err error
-	if bucketName == "" {
-		bucketName, err = file.DefaultBucketName(c)
-	}
-	return bucketName, err
-}
-
 //for now, cache the blobkey in memcache as key/value pair.
 //TODO: create a corrispondency "table" with imageName/key in upload/update
 
-func ImageServingUrlString(c context.Context, fileName string) (string, error) {
+func ImageServingUrlString(c context.Context, bucket string, fileName string) (string, error) {
 
 	if fileName == "" {
 		return "", errors.New("filename must not be empty")
 	}
 
-	bucket, err := GetBucketName(c)
-	if err != nil {
-		return "", err
+	if bucket == "" {
+		b, err := file.DefaultBucketName(c)
+		if err != nil {
+			return "", err
+		}
+		bucket = b
 	}
+
 
 	//get the urlString from cache
 	item, err := memcache.Get(c, fileName)
@@ -295,19 +285,19 @@ func (mage mage) parseRequestInputs(ctx context.Context, req *http.Request) (con
 	reqValues := make(RequestInputs)
 
 	reqValues[KeyRequestScheme] = requestInput{
-		[]string{req.URL.Scheme},
+		values: []string{req.URL.Scheme},
 	}
 
 	reqValues[KeyRequestURL] = requestInput{
-		[]string{req.URL.Path},
+		values:[]string{req.URL.Path},
 	}
 
 	reqValues[KeyRequestMethod] = requestInput{
-		[]string{req.Method},
+		values:[]string{req.Method},
 	}
 
 	reqValues[KeyRequestIPV4] = requestInput{
-		[]string{req.RemoteAddr},
+		values:[]string{req.RemoteAddr},
 	}
 
 	//get request params
@@ -332,6 +322,13 @@ func (mage mage) parseRequestInputs(ctx context.Context, req *http.Request) (con
 			if err != nil {
 				return ctx, err
 			}
+
+			// add the filehandles to the context
+			for k, v := range req.MultipartForm.File {
+				i := requestInput{}
+				i.files = v
+				reqValues[k] = i
+			}
 		} else {
 			err := req.ParseForm()
 			if err != nil {
@@ -349,8 +346,7 @@ func (mage mage) parseRequestInputs(ctx context.Context, req *http.Request) (con
 			break
 		}
 
-		for k := range req.Form {
-			v := req.Form[k]
+		for k, v := range req.Form {
 			i := requestInput{}
 			i.values = v
 			reqValues[k] = i

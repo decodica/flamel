@@ -1,6 +1,7 @@
 package mage
 
 import (
+	"mime/multipart"
 	"net/http"
 	"time"
 )
@@ -8,6 +9,7 @@ import (
 type requestItem int64
 
 type requestInput struct {
+	files []*multipart.FileHeader
 	values []string
 }
 
@@ -30,6 +32,10 @@ func (req requestInput) SetValue(newvalue string) {
 
 func (req requestInput) Values() []string {
 	return req.values
+}
+
+func (req requestInput) Files() []*multipart.FileHeader {
+	return req.files
 }
 
 type Redirect struct {

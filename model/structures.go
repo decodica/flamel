@@ -54,6 +54,16 @@ func mapStructure(t reflect.Type, s *encodedStruct) {
 	encodedStructsMutex.Unlock()
 }
 
+//todo check if field has tag "tag"
+func containsTag(tags []string, value string) string {
+	for _, v := range tags {
+		if v == value {
+			return v
+		}
+	}
+	return ""
+}
+
 //maps a structure into a linked list representation of its fields.
 //It is used to ease the conversion between the Model framework and the datastore
 func mapStructureLocked(t reflect.Type, s *encodedStruct) {
@@ -77,13 +87,12 @@ func mapStructureLocked(t reflect.Type, s *encodedStruct) {
 		}
 
 		tags := strings.Split(field.Tag.Get(tagDomain), ",")
-		tagName := tags[0]
 
-		if tagName == tagSkip {
+		if containsTag(tags, tagSkip) != "" {
 			continue
 		}
 
-		if !s.searchable && tagName == tagSearch {
+		if !s.searchable && containsTag(tags, tagSearch) != "" {
 			s.searchable = true
 		}
 
@@ -123,7 +132,7 @@ func mapStructureLocked(t reflect.Type, s *encodedStruct) {
 				sValue.childStruct = newEncodedStruct(sName)
 			}
 
-			sValue.childStruct.skipIfZero = tagName == tagZero
+			sValue.childStruct.skipIfZero = containsTag(tags, tagZero) != ""
 			if reflect.PtrTo(fType).Implements(typeOfModelable) {
 				s.referencesIdx = append(s.referencesIdx, i)
 			}
@@ -482,13 +491,15 @@ func toPropertyList(modelable modelable) ([]datastore.Property, error) {
 			continue
 		}
 
-		if field.Tag.Get("model") == tagSkip {
+		tags := strings.Split(field.Tag.Get(tagDomain), ",")
+
+		if containsTag(tags, tagSkip) != "" {
 			continue
 		}
 
 		p := datastore.Property{}
 
-		if field.Tag.Get("model") == tagNoindex {
+		if containsTag(tags, tagNoindex) != "" {
 			p.NoIndex = true
 		}
 

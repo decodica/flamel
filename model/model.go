@@ -2,7 +2,6 @@ package model
 
 import (
 	"context"
-	"encoding/gob"
 	"fmt"
 	"google.golang.org/appengine/datastore"
 	"reflect"
@@ -225,6 +224,7 @@ func index(m modelable) {
 		//we didn't map the structure earlier on. Map it now
 		model.structure.encodedStruct = newEncodedStruct(name)
 		mapStructure(mType, model.structure.encodedStruct)
+		// gob.Register(model.modelable)
 	}
 
 	hasAncestor := false
@@ -304,9 +304,6 @@ func index(m modelable) {
 	}
 
 	m.setModel(*model)
-
-	// register the modelable to the gob decoder
-	gob.Register(model.modelable)
 }
 
 // Returns a pointer to the Model the container is holding

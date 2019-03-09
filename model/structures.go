@@ -1,6 +1,7 @@
 package model
 
 import (
+	"encoding/gob"
 	"errors"
 	"fmt"
 	"google.golang.org/appengine"
@@ -155,6 +156,11 @@ func mapStructureLocked(t reflect.Type, s *encodedStruct) {
 		s.fieldNames[sName] = sValue
 	}
 	encodedStructs[t] = s
+
+	// once the struct has been mapped
+	// register it to the gob for memcache decoding
+	obj := reflect.New(t).Interface()
+	gob.Register(obj)
 }
 
 func encodeStruct(s interface{}, props *[]datastore.Property, multiple bool, codec *encodedStruct) error {

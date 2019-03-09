@@ -140,7 +140,7 @@ func TestDelete(t *testing.T) {
 		t.Fatalf("child must have been deleted. Found child %+v", entity.Child)
 	}
 
-	t.Logf("can't fine child: %s", err.Error())
+	t.Logf("can't find child: %s", err.Error())
 
 	e := Entity{}
 	q = NewQuery(&e)

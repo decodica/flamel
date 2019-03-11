@@ -98,6 +98,7 @@ func readMulti(ctx context.Context, dst interface{}) error {
 		//allocate a slice and fill it with pointers of the entities retrieved
 		typ := reflect.TypeOf(ref.Modelable)
 		refs := reflect.MakeSlice(reflect.SliceOf(typ), l, l)
+		// todo: why the reference values have a value before this???
 		for i := 0; i < l; i++ {
 			reflref := collection.Index(i).Elem().Field(ref.idx)
 			// set the slice as the destination for the reference read

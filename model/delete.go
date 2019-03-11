@@ -37,6 +37,11 @@ func clear(ctx context.Context, m modelable) (err error) {
 
 	for k := range model.references {
 		ref := model.references[k]
+		rm := ref.Modelable.getModel()
+		if rm.readonly {
+			continue
+		}
+
 		err = clear(ctx, ref.Modelable)
 		if err != nil {
 			return err

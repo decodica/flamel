@@ -131,7 +131,7 @@ func (model *searchable) Save() ([]search.Field, *search.DocumentMetadata, error
 		case _int:
 			sf.Value = float64(field.Int())
 		case _time, _geopoint:
-			sf.Value = field.Elem()
+			sf.Value = field.Interface()
 		case _key:
 			key := model.referenceAtIndex(desc.index).Key
 			sf.Value = search.Atom(key.Encode())
@@ -140,6 +140,11 @@ func (model *searchable) Save() ([]search.Field, *search.DocumentMetadata, error
 
 	return fields, nil, nil
 
+}
+
+func SearchPut(ctx context.Context, mlable modelable) error {
+	model := mlable.getModel()
+	return searchPut(ctx, model, model.Name())
 }
 
 // adds the model to the index
@@ -153,6 +158,32 @@ func searchPut(ctx context.Context, model *Model, name string) error {
 	_, err = index.Put(ctx, model.EncodedKey(), &searchable{Model: model})
 
 	return err
+}
+
+func SearchPutMulti(ctx context.Context, src interface{}) error {
+	if src == nil {
+		return fmt.Errorf("invalid container. Need a non-nil container")
+	}
+
+	srcv := reflect.ValueOf(src)
+	if !isValidContainer(srcv) {
+		return fmt.Errorf("invalid container of type %s. Container must be a modelable slice", srcv.Elem().Type().Name())
+	}
+
+	modelables := srcv.Elem()
+	l := modelables.Len()
+
+	models := make([]*Model, l)
+
+	name := ""
+	for i := 0; i < l; i++ {
+		lable := modelables.Index(i).Interface().(modelable)
+		mod := lable.getModel()
+		models[i] = mod
+		name = mod.Name()
+	}
+
+	return searchPutMulti(ctx, models, name)
 }
 
 func searchPutMulti(ctx context.Context, models []*Model, name string) error {

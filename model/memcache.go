@@ -52,6 +52,9 @@ func saveInMemcache(ctx context.Context, m modelable) (err error) {
 	for _, ref := range model.references {
 		r := ref.Modelable
 		rm := r.getModel()
+		if rm.readonly {
+			continue
+		}
 
 		//throw an error if the model Key and the reference Key do not coincide
 		if rm.Key == nil {
@@ -115,6 +118,7 @@ func loadFromMemcache(ctx context.Context, m modelable) (err error) {
 			r := ref.Modelable
 			rm := r.getModel()
 			rm.Key = decodedKey
+
 			err = loadFromMemcache(ctx, ref.Modelable)
 			if err != nil {
 				return err
@@ -125,6 +129,10 @@ func loadFromMemcache(ctx context.Context, m modelable) (err error) {
 			field := reflect.Indirect(reflect.ValueOf(box.Modelable)).Field(ref.idx)
 			src := reflect.Indirect(reflect.ValueOf(r))
 			field.Set(src)
+		} else {
+			// there is no reference saved at the given key: we could be in readonly.
+			// return an error and retrieve the item from datastore
+			return memcache.ErrCacheMiss
 		}
 	}
 
@@ -160,6 +168,10 @@ func deleteFromMemcache(ctx context.Context, m modelable) (err error) {
 
 	for k, _ := range model.references {
 		ref := model.references[k]
+		rm := ref.Modelable.getModel()
+		if rm.readonly {
+			continue
+		}
 		err := deleteFromMemcache(ctx, ref.Modelable)
 		if err != nil {
 			return err

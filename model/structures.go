@@ -33,6 +33,7 @@ type encodedStruct struct {
 	searchable bool
 	// if true the modelable does not get written if zeroed
 	skipIfZero    bool
+	readonly bool
 	structName    string
 	fieldNames    map[string]encodedField
 	referencesIdx []int
@@ -55,7 +56,8 @@ func mapStructure(t reflect.Type, s *encodedStruct) {
 	encodedStructsMutex.Unlock()
 }
 
-//todo check if field has tag "tag"
+// checks if field has tag "tag"
+// todo: can we do better than a linear search?
 func containsTag(tags []string, value string) string {
 	for _, v := range tags {
 		if v == value {
@@ -133,6 +135,8 @@ func mapStructureLocked(t reflect.Type, s *encodedStruct) {
 				sValue.childStruct = newEncodedStruct(sName)
 			}
 
+			// add reference properties
+			sValue.childStruct.readonly = containsTag(tags, tagReadonly) != ""
 			sValue.childStruct.skipIfZero = containsTag(tags, tagZero) != ""
 			if reflect.PtrTo(fType).Implements(typeOfModelable) {
 				s.referencesIdx = append(s.referencesIdx, i)

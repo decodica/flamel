@@ -14,6 +14,13 @@ const tagDomain string = "model"
 const tagNoindex string = "noindex"
 const tagZero string = "zero"
 const tagAncestor string = "ancestor"
+// Indicates that the given reference is "readonly"
+// That is, it is provided from outside of the model
+// An example would be the product model on a purchase model:
+// Everytime a purchase is created or updated, the underlying product should not be written
+// Beside improved performance obtained by avoiding writes on immutable model
+// this prevents datastore contention if adequately used
+const tagReadonly string = "readonly"
 const tagSkip string = "-"
 
 type modelable interface {
@@ -238,9 +245,8 @@ func index(m modelable) {
 		for idx, num := range model.encodedStruct.referencesIdx {
 			fType := mType.Field(num)
 			tags := strings.Split(fType.Tag.Get(tagDomain), ",")
-			tagName := tags[0]
 
-			isAnc := tagName == tagAncestor
+			isAnc := containsTag(tags, tagAncestor) != ""
 
 			if isAnc {
 				//flag the index as the ancestor

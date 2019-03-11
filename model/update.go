@@ -32,6 +32,14 @@ func Update(ctx context.Context, m modelable) (err error) {
 func updateReference(ctx context.Context, ref *reference, key *datastore.Key) (err error) {
 	model := ref.Modelable.getModel()
 
+	// align model key with its parent ref key
+	model.Key = key
+	ref.Key = key
+
+	if model.readonly {
+		return nil
+	}
+
 	//we iterate through the references of the current model
 	for i, r := range model.references {
 		rm := r.Modelable.getModel()
@@ -65,10 +73,6 @@ func updateReference(ctx context.Context, ref *reference, key *datastore.Key) (e
 		}
 		model.references[i] = r
 	}
-
-	//we align ref and parent Key
-	model.Key = key
-	ref.Key = key
 
 	_, err = datastore.Put(ctx, key, ref.Modelable)
 

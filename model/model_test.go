@@ -3,6 +3,7 @@ package model
 import (
 	"fmt"
 	"google.golang.org/appengine/aetest"
+	"google.golang.org/appengine/log"
 	"google.golang.org/appengine/memcache"
 	"reflect"
 	"testing"
@@ -14,6 +15,7 @@ type Entity struct {
 	Num        int
 	Child      Child
 	EmptyChild EmptyChild `model:"zero"`
+	ReadonlyChild `model:"readonly"`
 }
 
 type Child struct {
@@ -30,6 +32,11 @@ type Grandchild struct {
 type EmptyChild struct {
 	Model
 	Emptiness int
+}
+
+type ReadonlyChild struct {
+	Model
+	Value int
 }
 
 const total = 100
@@ -74,10 +81,19 @@ func TestUpdate(t *testing.T) {
 	}
 	defer done()
 
+	rc := ReadonlyChild{}
+	rc.Value = 1
+	err = Create(ctx, &rc)
+	if err != nil {
+		t.Fatal(err.Error())
+	}
+
 	// test correct indexing
 	entity := Entity{}
 	entity.Child.Name = "child"
 	entity.Child.Grandchild.GrandchildNum = 10
+	entity.ReadonlyChild = rc
+	entity.ReadonlyChild.Value = 100
 
 	err = Create(ctx, &entity)
 	if err != nil {
@@ -90,6 +106,14 @@ func TestUpdate(t *testing.T) {
 	}
 	entity.Child.Grandchild.GrandchildNum = 100
 	entity.Child.Name = ""
+
+	if err = Read(ctx, &entity.ReadonlyChild); err != nil {
+		t.Fatal(err.Error())
+	}
+
+	if entity.ReadonlyChild.Value != 1 {
+		t.Fatal("readonly child has been updated")
+	}
 
 	err = Update(ctx, &entity)
 	if err != nil {
@@ -117,11 +141,23 @@ func TestDelete(t *testing.T) {
 	}
 	defer done()
 
+	rc := ReadonlyChild{}
+	err = Create(ctx, &rc)
+	if err != nil {
+		log.Errorf(ctx, err.Error())
+	}
+
+	err = memcache.Flush(ctx)
+	if err != nil {
+		log.Errorf(ctx, err.Error())
+	}
+
 	// test correct indexing
 	entity := Entity{}
 	entity.Name = "Enzo"
 	entity.Child.Name = "child"
 	entity.Child.Grandchild.GrandchildNum = 10
+	entity.ReadonlyChild = rc
 
 	err = Create(ctx, &entity)
 	if err != nil {

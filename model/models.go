@@ -94,14 +94,18 @@ func readMulti(ctx context.Context, dst interface{}) error {
 		}
 	}
 
-	for _, ref := range mod.references {
+	for j, ref := range mod.references {
 		//allocate a slice and fill it with pointers of the entities retrieved
 		typ := reflect.TypeOf(ref.Modelable)
 		refs := reflect.MakeSlice(reflect.SliceOf(typ), l, l)
 		for i := 0; i < l; i++ {
 			reflref := collection.Index(i).Elem().Field(ref.idx)
+			// set the slice as the destination for the reference read
 			refs.Index(i).Set(reflref.Addr())
+			tmodel := destination.Index(i).Interface().(modelable)
+			tmodel.getModel().references[j].Key = refs.Index(i).Interface().(modelable).getModel().Key
 		}
+		// read into the address of the newly allocated references
 		err := readMulti(ctx, refs.Interface())
 		if err != nil {
 			return err

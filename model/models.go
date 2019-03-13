@@ -103,7 +103,7 @@ func readMulti(ctx context.Context, dst interface{}) error {
 			reflref := collection.Index(i).Elem().Field(ref.idx)
 			// set the slice as the destination for the reference read
 			refs.Index(i).Set(reflref.Addr())
-			tmodel := destination.Index(i).Interface().(modelable)
+			tmodel := collection.Index(i).Interface().(modelable)
 			tmodel.getModel().references[j].Key = refs.Index(i).Interface().(modelable).getModel().Key
 		}
 		// read into the address of the newly allocated references

@@ -9,16 +9,20 @@ import (
 	"reflect"
 	"strings"
 	"sync"
+	"time"
 )
 
 //flag fields that we want to search with "prototype:search"
 const tagSearch string = "search"
+const tagAtom string = "atom"
+const tagHTML string = "HTML"
 
 type searchType int
 
 const (
 	// string
 	_str searchType = iota
+	_atom
 	_int
 	_f64
 	_html
@@ -49,6 +53,9 @@ const (
 	SearchOr   searchOp = "OR"
 )
 
+var zeroTime = time.Unix(0, 0)
+var SearchZeroTime = zeroTime.Format("2006-02-01")
+
 // maps the searchable fields of a given struct to searchable fields to ease the runtime retrieval
 func getSearchablefields(t reflect.Type) []*fieldDescriptor {
 	// we already parsed the searchable fields of type t
@@ -64,20 +71,25 @@ func getSearchablefields(t reflect.Type) []*fieldDescriptor {
 	for i := 0; i < t.NumField(); i++ {
 		field := t.Field(i)
 
-		name := field.Tag.Get(tagDomain)
-		if i := strings.Index(name, ","); i != -1 {
-			name = name[:i]
-		}
+		tags := strings.Split(field.Tag.Get(tagDomain), ",")
+
+		name := containsTag(tags, tagSearch)
 
 		// the field has been flagged if it has model:search tag
-		if name == tagSearch {
+		if name != "" {
 			desc := fieldDescriptor{}
 			desc.index = i
 			desc.name = field.Name
 
 			switch field.Type.Kind() {
 			case reflect.String:
-				desc.searchType = _str
+				if containsTag(tags, tagAtom) != "" {
+					desc.searchType = _atom
+				} else if containsTag(tags, tagHTML) != "" {
+					desc.searchType = _html
+				} else {
+					desc.searchType = _str
+				}
 			case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
 				desc.searchType = _int
 			case reflect.Float32, reflect.Float64:
@@ -124,13 +136,25 @@ func (model *searchable) Save() ([]search.Field, *search.DocumentMetadata, error
 
 		field := val.Field(desc.index)
 		switch desc.searchType {
-		case _str, _html:
+		case _str:
 			sf.Value = field.String()
+		case _html:
+			sf.Value = search.HTML(field.String())
+		case _atom:
+			sf.Value = search.Atom(field.String())
 		case _f64:
 			sf.Value = float64(field.Float())
 		case _int:
 			sf.Value = float64(field.Int())
-		case _time, _geopoint:
+		case _time:
+			t := field.Interface().(time.Time)
+			if t.IsZero() {
+				unix := time.Unix(0, 0)
+				sf.Value = unix
+			} else {
+				sf.Value = t
+			}
+		case _geopoint:
 			sf.Value = field.Interface()
 		case _key:
 			key := model.referenceAtIndex(desc.index).Key

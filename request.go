@@ -60,9 +60,8 @@ func newResponseOutput() ResponseOutput {
 	return out
 }
 
-func (out *ResponseOutput) AddHeader(key string, value string) error {
+func (out *ResponseOutput) AddHeader(key string, value string) {
 	out.headers[key] = value
-	return nil
 }
 
 func (out *ResponseOutput) AddCookie(cookie http.Cookie) {

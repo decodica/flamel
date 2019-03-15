@@ -93,15 +93,14 @@ func (q *Query) Count(ctx context.Context) (int, error) {
 }
 
 func (q *Query) Distinct(fields ...string) *Query {
-	pf := make([]string, 0, 0)
-
-	for _, v := range fields {
-		prepared := v
-		pf = append(pf, prepared)
-	}
-
-	q.dq = q.dq.Project(pf...)
+	q.dq = q.dq.Project(fields...)
 	q.dq = q.dq.Distinct()
+	q.projection = true
+	return q
+}
+
+func (q *Query) Project(fields ...string) *Query {
+	q.dq = q.dq.Project(fields...)
 	q.projection = true
 	return q
 }
@@ -289,7 +288,7 @@ func (query *Query) get(ctx context.Context, dst interface{}) (*datastore.Cursor
 		model := m.getModel()
 		model.Key = Key
 
-		err = Read(ctx, m)
+		err = ReadOutsideTransaction(ctx, m)
 		if err != nil {
 			query = nil
 			return nil, err

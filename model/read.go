@@ -5,6 +5,17 @@ import (
 	"google.golang.org/appengine/datastore"
 )
 
+func ReadOutsideTransaction(ctx context.Context, m modelable) (err error) {
+	index(m)
+
+	err = loadFromMemcache(ctx, m)
+	if err == nil {
+		return nil
+	}
+
+	return read(ctx, m)
+}
+
 // Reads data from the datastore and writes them into the modelable.
 func Read(ctx context.Context, m modelable) (err error) {
 	index(m)

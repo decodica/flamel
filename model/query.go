@@ -199,6 +199,7 @@ func (query *Query) GetMulti(ctx context.Context, dst interface{}) error {
 		return errors.New("invalid query. Can't use projection queries with GetMulti")
 	}
 
+	query.dq = query.dq.KeysOnly()
 	it := query.dq.Run(ctx)
 
 	dstv := reflect.ValueOf(dst)
@@ -288,7 +289,7 @@ func (query *Query) get(ctx context.Context, dst interface{}) (*datastore.Cursor
 		model := m.getModel()
 		model.Key = Key
 
-		err = ReadOutsideTransaction(ctx, m)
+		err = Read(ctx, m)
 		if err != nil {
 			query = nil
 			return nil, err

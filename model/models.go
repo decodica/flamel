@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"golang.org/x/net/context"
 	"google.golang.org/appengine/datastore"
+	"google.golang.org/appengine/log"
 	"google.golang.org/appengine/memcache"
 	"reflect"
 )
@@ -49,7 +50,6 @@ func readMulti(ctx context.Context, dst interface{}) error {
 	//populate the key slice
 	l := collection.Len()
 
-	source := make([]source, collection.Len(), l)
 	keys := make([]*datastore.Key, 0, collection.Cap())
 
 	// make a copy of the destination slice
@@ -65,17 +65,15 @@ func readMulti(ctx context.Context, dst interface{}) error {
 		err := loadFromMemcache(ctx, mble)
 		if err == nil {
 			collection.Index(i).Set(reflect.ValueOf(mble))
-			source[i] = cache
 			continue
 		}
 
 		if err != memcache.ErrCacheMiss {
-			return fmt.Errorf("can't fetch modelable %s from cache", mble.getModel().Name())
+			log.Warningf(ctx, "error retrieving model %s from memcache: %s", mble.getModel().Name(), err.Error())
 		}
 
 		// we have an empty ref, skip it
 		if mble.getModel().Key == nil {
-			source[i] = none
 			continue
 		}
 
@@ -98,7 +96,6 @@ func readMulti(ctx context.Context, dst interface{}) error {
 		//allocate a slice and fill it with pointers of the entities retrieved
 		typ := reflect.TypeOf(ref.Modelable)
 		refs := reflect.MakeSlice(reflect.SliceOf(typ), l, l)
-		// todo: why the reference values have a value before this???
 		for i := 0; i < l; i++ {
 			reflref := collection.Index(i).Elem().Field(ref.idx)
 			// set the slice as the destination for the reference read

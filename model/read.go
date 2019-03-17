@@ -3,9 +3,10 @@ package model
 import (
 	"context"
 	"google.golang.org/appengine/datastore"
+	"google.golang.org/appengine/log"
 )
 
-func ReadOutsideTransaction(ctx context.Context, m modelable) (err error) {
+func Read(ctx context.Context, m modelable) (err error) {
 	index(m)
 
 	err = loadFromMemcache(ctx, m)
@@ -13,15 +14,22 @@ func ReadOutsideTransaction(ctx context.Context, m modelable) (err error) {
 		return nil
 	}
 
-	return read(ctx, m)
+	err = read(ctx, m)
+	if err == nil {
+		if err = saveInMemcache(ctx, m); err != nil {
+			log.Warningf(ctx, "error saving modelable %s to memcache: %s", m.getModel().Name(), err.Error())
+		}
+	}
+	return err
 }
 
 // Reads data from the datastore and writes them into the modelable.
-func Read(ctx context.Context, m modelable) (err error) {
+func ReadInTransaction(ctx context.Context, m modelable) (err error) {
 	index(m)
 
 	opts := datastore.TransactionOptions{}
 	opts.XG = true
+	opts.ReadOnly = true
 	opts.Attempts = 1
 
 	err = loadFromMemcache(ctx, m)
@@ -36,6 +44,11 @@ func Read(ctx context.Context, m modelable) (err error) {
 		return read(ctx, m)
 	}, &opts)
 
+	if err == nil {
+		if err := saveInMemcache(ctx, m); err != nil {
+			log.Warningf(ctx, "error saving modelable %s to memcache: %s", m.getModel().Name(), err.Error())
+		}
+	}
 	return err
 }
 

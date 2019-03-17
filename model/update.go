@@ -10,7 +10,7 @@ import (
 // If a reference is read from the storage and then assigned to the root modelable
 // the root modelable will point to the loaded entity
 // If a reference is newly created its value will be updated accordingly to the model
-func Update(ctx context.Context, m modelable) (err error) {
+func UpdateInTransaction(ctx context.Context, m modelable) (err error) {
 	index(m)
 
 	opts := datastore.TransactionOptions{}
@@ -19,6 +19,20 @@ func Update(ctx context.Context, m modelable) (err error) {
 	err = datastore.RunInTransaction(ctx, func(ctx context.Context) error {
 		return update(ctx, m)
 	}, &opts)
+
+	if err == nil {
+		if err = saveInMemcache(ctx, m); err != nil {
+			return err
+		}
+	}
+
+	return err
+}
+
+func Update(ctx context.Context, m modelable) error {
+	index(m)
+
+	err := update(ctx, m)
 
 	if err == nil {
 		if err = saveInMemcache(ctx, m); err != nil {

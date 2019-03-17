@@ -10,6 +10,7 @@ import (
 type CreateOptions struct {
 	stringId string
 	intId    int64
+	attempts int
 }
 
 func NewCreateOptions() CreateOptions {
@@ -26,15 +27,23 @@ func (opts *CreateOptions) WithIntId(id int64) {
 	opts.intId = id
 }
 
+func (opts *CreateOptions) InTransaction(attempts int) {
+	opts.attempts = attempts
+}
+
 func CreateWithOptions(ctx context.Context, m modelable, copts *CreateOptions) (err error) {
 	index(m)
 
-	opts := datastore.TransactionOptions{}
-	opts.XG = true
-	opts.Attempts = 1
-	err = datastore.RunInTransaction(ctx, func(ctx context.Context) error {
-		return createWithOptions(ctx, m, copts)
-	}, &opts)
+	if copts.attempts > 0 {
+		opts := datastore.TransactionOptions{}
+		opts.XG = true
+		opts.Attempts = copts.attempts
+		err = datastore.RunInTransaction(ctx, func(ctx context.Context) error {
+			return createWithOptions(ctx, m, copts)
+		}, &opts)
+	} else {
+		err = createWithOptions(ctx, m, copts)
+	}
 
 	if err == nil {
 		if err = saveInMemcache(ctx, m); err != nil {

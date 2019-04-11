@@ -147,5 +147,9 @@ func update(ctx context.Context, m modelable) error {
 
 	model.Key = Key
 
+	if model.searchable {
+		err = searchPut(ctx, model, model.Name())
+	}
+
 	return nil
 }

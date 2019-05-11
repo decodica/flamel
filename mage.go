@@ -2,16 +2,10 @@ package mage
 
 import (
 	"bytes"
+	"context"
 	"distudio.com/mage/cors"
 	"distudio.com/mage/internal/router"
-	"errors"
 	"fmt"
-	"golang.org/x/net/context"
-	"google.golang.org/appengine"
-	"google.golang.org/appengine/blobstore"
-	"google.golang.org/appengine/file"
-	"google.golang.org/appengine/image"
-	"google.golang.org/appengine/memcache"
 	"io/ioutil"
 	"net/http"
 	"strings"
@@ -22,6 +16,7 @@ type mage struct {
 	Config
 	app        Application
 	bufferPool *sync.Pool
+	services []Service
 }
 
 type Application interface {
@@ -38,9 +33,11 @@ func (mage *mage) LaunchApp(application Application) {
 	mage.app = application
 }
 
+func (mage *mage) AddService(service Service) {
+	mage.services = append(mage.services, service)
+}
+
 type Config struct {
-	UseMemcache       bool
-	MaxFileUploadSize int64
 	//true if the server suport Cross Origin Request
 	CORS                    *cors.Cors
 	EnforceHostnameRedirect string
@@ -50,7 +47,6 @@ type Config struct {
 func DefaultConfig() Config {
 	config := Config{}
 	config.Router = NewDefaultRouter()
-	config.MaxFileUploadSize = SettingDefaultMaxFileSize
 	return config
 }
 
@@ -62,64 +58,11 @@ const (
 	KeyRequestJSON   = "__mage_json__"
 	KeyRequestURL    = "__mage_URL__"
 	KeyRequestScheme = "__mage_Scheme__"
-
-	//default at 4 megs
-	SettingDefaultMaxFileSize = (1 << 20) * 4
 )
 
 //mage is a singleton
 var instance *mage
 var once sync.Once
-
-//for now, cache the blobkey in memcache as key/value pair.
-//TODO: create a corrispondency "table" with imageName/key in upload/update
-
-func ImageServingUrlString(c context.Context, bucket string, fileName string) (string, error) {
-
-	if fileName == "" {
-		return "", errors.New("filename must not be empty")
-	}
-
-	if bucket == "" {
-		b, err := file.DefaultBucketName(c)
-		if err != nil {
-			return "", err
-		}
-		bucket = b
-	}
-
-
-	//get the urlString from cache
-	item, err := memcache.Get(c, fileName)
-
-	if err == memcache.ErrCacheMiss {
-
-		fullName := "/gs/" + bucket + "/" + fileName
-		key, err := blobstore.BlobKeyForFile(c, fullName)
-
-		if err != nil {
-			return "", err
-		}
-
-		url, err := image.ServingURL(c, key, nil)
-
-		if err != nil {
-			return "", err
-		}
-
-		item := &memcache.Item{}
-		item.Key = fileName
-		item.Value = []byte(url.String())
-		err = memcache.Set(c, item)
-		if err != nil {
-			panic(err)
-		}
-
-		return url.String(), err
-	}
-
-	return string(item.Value), err
-}
 
 //singleton instance
 func Instance() *mage {
@@ -144,7 +87,7 @@ func (mage *mage) Run(w http.ResponseWriter, req *http.Request) {
 		panic("Must set MAGE Application!")
 	}
 
-	ctx := appengine.NewContext(req)
+	ctx := context.Background()
 
 	ctx = mage.app.OnStart(ctx)
 
@@ -320,11 +263,6 @@ func (mage mage) parseRequestInputs(ctx context.Context, req *http.Request) (con
 		reqType := req.Header.Get("Content-Type")
 		//parse the multiform data if the request specifies it as its content type
 		if strings.Contains(reqType, "multipart/form-data") {
-			err := req.ParseMultipartForm(mage.Config.MaxFileUploadSize)
-			if err != nil {
-				return ctx, err
-			}
-
 			// add the filehandles to the context
 			for k, v := range req.MultipartForm.File {
 				i := requestInput{}

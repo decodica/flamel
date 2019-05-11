@@ -42,7 +42,7 @@ type ReadonlyChild struct {
 const total = 100
 const find = 10
 
-func TestIndexing(t *testing.T) {
+func TestCreateEmpty(t *testing.T) {
 
 	ctx, done, err := aetest.NewContext()
 	if err != nil {
@@ -50,6 +50,9 @@ func TestIndexing(t *testing.T) {
 	}
 	defer done()
 
+	service := Service{}
+	service.project = "mage-middleware"
+	ctx = service.OnStart(ctx)
 	// test correct indexing
 	entity := Entity{}
 	index(&entity)
@@ -72,6 +75,8 @@ func TestIndexing(t *testing.T) {
 	if entity.EmptyChild.Key != nil {
 		t.Fatal("empty child has non-nil key")
 	}
+
+	service.OnEnd(ctx)
 }
 
 func TestUpdate(t *testing.T) {
@@ -81,6 +86,8 @@ func TestUpdate(t *testing.T) {
 	}
 	defer done()
 
+	service := Service{project: "mage-middleware"}
+	ctx = service.OnStart(ctx)
 	rc := ReadonlyChild{}
 	rc.Value = 1
 	err = Create(ctx, &rc)
@@ -131,6 +138,8 @@ func TestUpdate(t *testing.T) {
 	if entity.Child.Name != "" {
 		t.Fatalf("child has not been updated. Name is %s", entity.Child.Name)
 	}
+
+	service.OnEnd(ctx)
 }
 
 func TestDelete(t *testing.T) {

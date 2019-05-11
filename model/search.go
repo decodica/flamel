@@ -2,9 +2,9 @@ package model
 
 import (
 	"bytes"
+	"cloud.google.com/go/datastore"
 	"context"
 	"fmt"
-	"google.golang.org/appengine/datastore"
 	"google.golang.org/appengine/search"
 	"reflect"
 	"strings"

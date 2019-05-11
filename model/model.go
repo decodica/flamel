@@ -1,9 +1,9 @@
 package model
 
 import (
+	"cloud.google.com/go/datastore"
 	"context"
 	"fmt"
-	"google.golang.org/appengine/datastore"
 	"reflect"
 	"strings"
 )
@@ -118,7 +118,8 @@ func FromIntID(ctx context.Context, m modelable, id int64, ancestor modelable) e
 		ancKey = ancestor.getModel().Key
 	}
 
-	model.Key = datastore.NewKey(ctx, model.structName, "", id, ancKey)
+
+	model.Key = datastore.IDKey(model.structName, id, ancKey)
 	return Read(ctx, m)
 }
 
@@ -139,7 +140,7 @@ func FromStringID(ctx context.Context, m modelable, id string, ancestor modelabl
 		ancKey = ancestor.getModel().Key
 	}
 
-	model.Key = datastore.NewKey(ctx, model.structName, id, 0, ancKey)
+	model.Key = datastore.NameKey(model.structName, id, ancKey)
 	return Read(ctx, m)
 }
 
@@ -164,14 +165,14 @@ func (model Model) IntID() int64 {
 		return -1
 	}
 
-	return model.Key.IntID()
+	return model.Key.ID
 }
 
 func (model Model) StringID() string {
 	if model.Key == nil {
 		return ""
 	}
-	return model.Key.StringID()
+	return model.Key.Name
 }
 
 //Returns the name of the modelable this model refers to

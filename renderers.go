@@ -24,8 +24,8 @@ func (renderer *TemplateRenderer) Render(w http.ResponseWriter) error {
 	if err != nil {
 		return err
 	}
-	buf.WriteTo(w)
-	return nil
+	_, err = buf.WriteTo(w)
+	return err
 }
 
 // Returns the data as JSON object(s)

@@ -1,10 +1,22 @@
 package model
 
 import (
+	"cloud.google.com/go/datastore"
 	"context"
-	"google.golang.org/appengine/datastore"
 	"google.golang.org/appengine/log"
 )
+
+type ReadOptions struct {
+	attempts int
+}
+
+func NewReadOptions() ReadOptions {
+	return ReadOptions{}
+}
+
+func (opts *ReadOptions) InTransaction(attempts int) {
+	opts.attempts = attempts
+}
 
 func Read(ctx context.Context, m modelable) (err error) {
 	index(m)
@@ -24,13 +36,8 @@ func Read(ctx context.Context, m modelable) (err error) {
 }
 
 // Reads data from the datastore and writes them into the modelable.
-func ReadInTransaction(ctx context.Context, m modelable) (err error) {
+func ReadInTransaction(ctx context.Context, m modelable, opts *ReadOptions) (err error) {
 	index(m)
-
-	opts := datastore.TransactionOptions{}
-	opts.XG = true
-	opts.ReadOnly = true
-	opts.Attempts = 1
 
 	err = loadFromMemcache(ctx, m)
 
@@ -38,11 +45,12 @@ func ReadInTransaction(ctx context.Context, m modelable) (err error) {
 		return nil
 	}
 
+	to := datastore.MaxAttempts(opts.attempts)
 	// else we ignore the memcache result and we read from datastore
-
-	err = datastore.RunInTransaction(ctx, func(ctx context.Context) error {
+	client := client(ctx)
+	_, err = client.RunInTransaction(ctx, func(tx *datastore.Transaction) error {
 		return read(ctx, m)
-	}, &opts)
+	}, to, datastore.ReadOnly)
 
 	if err == nil {
 		if err := saveInMemcache(ctx, m); err != nil {
@@ -59,7 +67,8 @@ func read(ctx context.Context, m modelable) error {
 		return nil
 	}
 
-	err := datastore.Get(ctx, model.Key, m)
+	client := client(ctx)
+	err := client.Get(ctx, model.Key, m)
 
 	if err != nil {
 		return err

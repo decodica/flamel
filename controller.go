@@ -6,8 +6,6 @@ import (
 	"golang.org/x/net/context"
 )
 
-type RequestInputs map[string]requestInput
-
 var ErrMageNoJSON = errors.New("inputs do not contain json data")
 
 func InputsFromContext(ctx context.Context) RequestInputs {

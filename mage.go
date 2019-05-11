@@ -302,6 +302,8 @@ func (mage mage) parseRequestInputs(ctx context.Context, req *http.Request) (con
 
 	//get request params
 	switch req.Method {
+	case http.MethodDelete:
+		fallthrough
 	case http.MethodGet:
 		for k := range req.URL.Query() {
 			s := make([]string, 1, 1)
@@ -351,17 +353,6 @@ func (mage mage) parseRequestInputs(ctx context.Context, req *http.Request) (con
 			i.values = v
 			reqValues[k] = i
 		}
-	case http.MethodDelete:
-		for k := range req.URL.Query() {
-			s := make([]string, 1, 1)
-			v := req.URL.Query().Get(k)
-			s[0] = v
-			i := requestInput{}
-			i.values = s
-			reqValues[k] = i
-		}
-		break
-	default:
 	}
 
 	//get the headers

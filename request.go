@@ -6,7 +6,7 @@ import (
 	"time"
 )
 
-type requestItem int64
+type RequestInputs map[string]requestInput
 
 type requestInput struct {
 	files []*multipart.FileHeader

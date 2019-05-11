@@ -22,7 +22,7 @@ func (service *Service) Name() string {
 	return name
 }
 
-func (service *Service) OnCreate(ctx context.Context) {
+func (service *Service) Initialize() {
 	service.project = os.Getenv("DATASTORE_PROJECT_ID")
 }
 

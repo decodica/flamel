@@ -6,6 +6,7 @@ import (
 	"distudio.com/mage/cors"
 	"distudio.com/mage/internal/router"
 	"fmt"
+	"google.golang.org/appengine"
 	"io/ioutil"
 	"net/http"
 	"strings"
@@ -31,6 +32,9 @@ func (mage *mage) LaunchApp(application Application) {
 		panic("Application already set")
 	}
 	mage.app = application
+	for _, s := range mage.services {
+		s.Initialize()
+	}
 }
 
 func (mage *mage) AddService(service Service) {
@@ -87,9 +91,12 @@ func (mage *mage) Run(w http.ResponseWriter, req *http.Request) {
 		panic("Must set MAGE Application!")
 	}
 
-	ctx := context.Background()
+	ctx := appengine.NewContext(req)
 
 	ctx = mage.app.OnStart(ctx)
+	for _, s := range mage.services {
+		ctx = s.OnStart(ctx)
+	}
 
 	//if we enforce the hostname and the request hostname doesn't match, we redirect to the requested host
 	//host is in the form domainname.com
@@ -221,6 +228,9 @@ func (mage *mage) Run(w http.ResponseWriter, req *http.Request) {
 func (mage *mage) destroy(ctx context.Context, controller Controller) {
 	controller.OnDestroy(ctx)
 	controller = nil
+	for _, s := range mage.services {
+		s.OnEnd(ctx)
+	}
 	mage.app.AfterResponse(ctx)
 }
 

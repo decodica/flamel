@@ -8,6 +8,7 @@ import (
 	"google.golang.org/appengine/memcache"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"testing"
 	"time"
 )
@@ -184,9 +185,13 @@ func (controller *readController) Process(ctx context.Context, out *ResponseOutp
 }
 
 func TestModelCalls_Run(t *testing.T) {
-
+	if err := os.Setenv("DATASTORE_PROJECT_ID", "mage-middleware"); err != nil {
+		t.Fatalf("unable to set project id. error %s", err.Error())
+	}
 	t.Log("*** TEST STARTED ***")
 	opts := aetest.Options{}
+
+	opts.StartupTimeout = 60 * time.Second
 	instance, err := aetest.NewInstance(&opts)
 	if err != nil {
 		t.Fatalf("error creating ae instance: %s", err.Error())
@@ -194,6 +199,8 @@ func TestModelCalls_Run(t *testing.T) {
 	defer instance.Close()
 
 	m := Instance()
+	mod := model.Service{}
+	m.AddService(&mod)
 
 	app := &appTest{}
 	m.LaunchApp(app)

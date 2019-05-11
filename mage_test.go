@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 )
 
 type appTest struct {
@@ -39,12 +40,9 @@ func (controller *controllerTest) Process(ctx context.Context, out *ResponseOutp
 	return Redirect{Status: http.StatusOK}
 }
 
-func (controller *controllerTest) OnDestroy(ctx context.Context) {
+func (controller *controllerTest) OnDestroy(ctx context.Context) {}
 
-}
-
-type userTest struct {
-}
+type userTest struct {}
 
 type authenticatorTest struct {
 	Authenticator
@@ -70,6 +68,7 @@ func TestMage_Run(t *testing.T) {
 	t.Log("*** TEST STARTED ***")
 
 	opts := aetest.Options{}
+	opts.StartupTimeout = 60 * time.Second
 	instance, err := aetest.NewInstance(&opts)
 
 	if err != nil {
@@ -79,6 +78,7 @@ func TestMage_Run(t *testing.T) {
 
 	//set up mage
 	m := Instance()
+
 	m.SetRoute("", func(ctx context.Context) Controller { return &controllerTest{name: "root"} }, nil)
 	m.SetRoute("/static", func(ctx context.Context) Controller { return &controllerTest{name: "/static"} }, nil)
 	m.SetRoute("/static/*", func(ctx context.Context) Controller { return &controllerTest{name: "/static/*"} }, nil)
@@ -131,6 +131,7 @@ func TestMage_Run(t *testing.T) {
 func BenchmarkFindRoute(b *testing.B) {
 
 	opts := aetest.Options{}
+	opts.StartupTimeout = 60 * time.Second
 	instance, err := aetest.NewInstance(&opts)
 
 	if err != nil {

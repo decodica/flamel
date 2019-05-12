@@ -59,7 +59,7 @@ type node struct {
 
 // returns true if the node has parametric children or wildcard
 func (n node) isParametrized() bool {
-	return n.parameterCount+n.wildcardCount > 0
+	return n.parameterCount + n.wildcardCount > 0
 }
 
 func (n *node) addEdge(edge edge) {
@@ -328,6 +328,7 @@ func (t *tree) findRoute(s string) (*Route, Params) {
 	pcount := 0
 
 	if max := maxParamsInPath(s); max > 0 {
+		//todo: causes allocation
 		params = make(Params, max)
 	}
 

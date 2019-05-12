@@ -160,13 +160,14 @@ func BenchmarkFindRoute(b *testing.B) {
 	}
 
 	b.Run("Find route", func(b *testing.B) {
+		b.ReportAllocs()
+		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
 			_, err, _ = m.Router.RouteForPath(ctx, req.URL.Path)
 			if err != nil {
 				b.Fatalf("Error retrieving route: %s", err)
 			}
 		}
-
 	})
 
 }

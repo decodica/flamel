@@ -244,6 +244,8 @@ func TestModel(t *testing.T) {
 }
 
 func BenchmarkMapStructureLocked(b *testing.B) {
+	b.ReportAllocs()
+	b.ResetTimer()
 	entity := Entity{}
 	typ := reflect.TypeOf(entity)
 	structure := newEncodedStruct(typ.Name())
@@ -260,6 +262,8 @@ func BenchmarkIsEmpty(b *testing.B) {
 }
 
 func BenchmarkIndexing(b *testing.B) {
+	b.ReportAllocs()
+	b.ResetTimer()
 	for n := 0; n < b.N; n++ {
 		entity := Entity{}
 		index(&entity)

@@ -24,7 +24,7 @@ func TestFindRoute(t *testing.T) {
 		if route == nil {
 			t.Fatalf("couldn't find route %s", r)
 		}
-		t.Logf("found route %s", route.Name)
+		t.Logf("found route %s for request %s", route.Name, r)
 	}
 
 	for _, r := range mustFail {

@@ -1,7 +1,6 @@
 package router
 
 import (
-	"bytes"
 	"sort"
 	"strings"
 )
@@ -56,11 +55,18 @@ type node struct {
 
 	// sorted slice of edge
 	edges edges
+
+	// parent of the node
+	parent *node
 }
 
 // returns true if the node has parametric children or wildcard
 func (n node) isParametrized() bool {
 	return n.parameterCount + n.wildcardCount > 0
+}
+
+func (n node) params() int {
+	return n.parameterCount + n.wildcardCount
 }
 
 func (n *node) addEdge(edge edge) {
@@ -113,6 +119,7 @@ func (n node) wildCardChild() *node {
 type tree struct {
 	root *node
 	size int
+	maxArgs int
 }
 
 func newTree() *tree {
@@ -159,9 +166,23 @@ func splitSegments(url string) []string {
 	return segments
 }
 
+func (t *tree) insert(route *Route) {
+	n := t.addEdge(route)
+	// walk the tree and count all the path params
+	params := 0
+	for n.parent != nil {
+		params += n.params()
+		n = n.parent
+	}
+
+	if params > t.maxArgs {
+		t.maxArgs = params
+	}
+}
+
 // adds a new node or updates an existing one
 // returns true if the node has been updated
-func (t *tree) insert(route *Route) {
+func (t *tree) addEdge(route *Route) *node {
 
 	var parent *node
 	n := t.root
@@ -175,7 +196,7 @@ func (t *tree) insert(route *Route) {
 			// if we are not at the leaf, we increment the tree size
 			t.size++
 
-			return
+			return n
 		}
 
 		// look for the edge
@@ -196,7 +217,7 @@ func (t *tree) insert(route *Route) {
 				}
 
 				segment := segments[i]
-				node := node{route: r, prefix: segment}
+				node := node{route: r, prefix: segment, parent: parent}
 				e := edge{
 					label: segment[0],
 					node:  &node,
@@ -207,11 +228,12 @@ func (t *tree) insert(route *Route) {
 				case wildcardChar:
 					parent.wildcardCount++
 				}
+
 				parent.addEdge(e)
 				parent = &node
 				t.size++
 			}
-			return
+			return parent
 		}
 
 		// we found an edge to attach the new node
@@ -253,6 +275,7 @@ func (t *tree) insert(route *Route) {
 			node:  n,
 		}
 		child.addEdge(e)
+		n.parent = child
 		n.prefix = n.prefix[wanted:]
 
 		if n.route != nil {
@@ -271,7 +294,7 @@ func (t *tree) insert(route *Route) {
 		// we assign the route to the node.
 		if len(search) == 0 {
 			child.route = route
-			return
+			return child
 		}
 
 		// if the prefix contains two or more segments of the url, we break it into multiple
@@ -296,30 +319,19 @@ func (t *tree) insert(route *Route) {
 			case wildcardChar:
 				child.wildcardCount++
 			}
+
+			node.parent = child
 			child.addEdge(e)
 			child = &node
 			t.size++
 		}
 
-		return
+		return child
 	}
-}
-
-func maxParamsInPath(s string) int {
-	if len(s) <= 1 {
-		return 0
-	}
-
-	max := strings.Count(s, "")
-	if s[len(s)-1] == 0 {
-		max--
-	}
-
-	return max
 }
 
 // Finds the requested route
-func (t *tree) findRoute(search string) (*Route, Params) {
+func (t tree) findRoute(search string) (*Route, Params) {
 	n := t.root
 
 
@@ -327,10 +339,9 @@ func (t *tree) findRoute(search string) (*Route, Params) {
 	// avoid the use of append
 	var params Params
 	pcount := 0
-	var buffer bytes.Buffer
-	if max := maxParamsInPath(search); max > 0 {
-		//todo: causes allocation
-		params = make(Params, max)
+
+	if t.maxArgs > 0 {
+		params = make(Params, t.maxArgs)
 	}
 
 	for {
@@ -355,8 +366,8 @@ func (t *tree) findRoute(search string) (*Route, Params) {
 				// If so, we walk the wildcard route looking for the correct match.
 
 				// check if we are at the end of the search, assuming no backslashes as route end
-				//idx := strings.IndexByte(string(search), '/')
-				idx := firstSeparator(search)
+				idx := strings.IndexByte(string(search), '/')
+				//idx := firstSeparator(search)
 
 				// we are processing the last path segment.
 				if idx == -1 {
@@ -380,7 +391,6 @@ func (t *tree) findRoute(search string) (*Route, Params) {
 					break
 				}
 
-				n = parent
 				child := parent.parametricChild()
 
 				if child != nil {
@@ -390,13 +400,9 @@ func (t *tree) findRoute(search string) (*Route, Params) {
 				} else {
 					child = parent.wildCardChild()
 				}
-				sub := child.prefix
-				tmp := search[idx:]
 
-				buffer.Reset()
-				buffer.WriteString(sub)
-				buffer.WriteString(tmp)
-				search = buffer.String()
+				n = child
+				search = search[idx:]
 				continue
 			}
 			break
@@ -406,13 +412,4 @@ func (t *tree) findRoute(search string) (*Route, Params) {
 	}
 
 	return nil, nil
-}
-
-func firstSeparator(s string) int {
-	for i := range s {
-		if s[i] == '/' {
-			return i
-		}
-	}
-	return -1
 }

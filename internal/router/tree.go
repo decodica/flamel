@@ -331,9 +331,8 @@ func (t *tree) addEdge(route *Route) *node {
 }
 
 // Finds the requested route
-func (t tree) findRoute(search string) (*Route, Params) {
+func (t *tree) findRoute(search string) (*Route, Params) {
 	n := t.root
-
 
 	// maps all params gathered along the path
 	// avoid the use of append
@@ -349,10 +348,7 @@ func (t tree) findRoute(search string) (*Route, Params) {
 		// we traversed all the trie
 		// return the route at the node
 		if len(search) == 0 {
-			if pcount > 0 {
-				return n.route, params[:pcount]
-			}
-			return n.route, nil
+			return n.route, params[:pcount]
 		}
 
 		parent := n
@@ -367,7 +363,6 @@ func (t tree) findRoute(search string) (*Route, Params) {
 
 				// check if we are at the end of the search, assuming no backslashes as route end
 				idx := strings.IndexByte(string(search), '/')
-				//idx := firstSeparator(search)
 
 				// we are processing the last path segment.
 				if idx == -1 {
@@ -382,10 +377,7 @@ func (t tree) findRoute(search string) (*Route, Params) {
 					}
 
 					if n = parent.wildCardChild(); n != nil {
-						if pcount > 0 {
-							return n.route, params[:pcount]
-						}
-						return n.route, nil
+						return n.route, params[:pcount]
 					}
 
 					break

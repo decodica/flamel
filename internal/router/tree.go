@@ -1,6 +1,7 @@
 package router
 
 import (
+	"bytes"
 	"sort"
 	"strings"
 )
@@ -318,16 +319,16 @@ func maxParamsInPath(s string) int {
 }
 
 // Finds the requested route
-func (t *tree) findRoute(s string) (*Route, Params) {
+func (t *tree) findRoute(search string) (*Route, Params) {
 	n := t.root
-	search := s
+
 
 	// maps all params gathered along the path
 	// avoid the use of append
 	var params Params
 	pcount := 0
-
-	if max := maxParamsInPath(s); max > 0 {
+	var buffer bytes.Buffer
+	if max := maxParamsInPath(search); max > 0 {
 		//todo: causes allocation
 		params = make(Params, max)
 	}
@@ -354,7 +355,8 @@ func (t *tree) findRoute(s string) (*Route, Params) {
 				// If so, we walk the wildcard route looking for the correct match.
 
 				// check if we are at the end of the search, assuming no backslashes as route end
-				idx := strings.IndexByte(search, '/')
+				//idx := strings.IndexByte(string(search), '/')
+				idx := firstSeparator(search)
 
 				// we are processing the last path segment.
 				if idx == -1 {
@@ -389,8 +391,12 @@ func (t *tree) findRoute(s string) (*Route, Params) {
 					child = parent.wildCardChild()
 				}
 				sub := child.prefix
+				tmp := search[idx:]
 
-				search = strings.Replace(search, search[:idx], sub, 1)
+				buffer.Reset()
+				buffer.WriteString(sub)
+				buffer.WriteString(tmp)
+				search = buffer.String()
 				continue
 			}
 			break
@@ -400,4 +406,13 @@ func (t *tree) findRoute(s string) (*Route, Params) {
 	}
 
 	return nil, nil
+}
+
+func firstSeparator(s string) int {
+	for i := range s {
+		if s[i] == '/' {
+			return i
+		}
+	}
+	return -1
 }

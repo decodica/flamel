@@ -58,6 +58,12 @@ type node struct {
 
 	// parent of the node
 	parent *node
+
+	// wildcard
+	wildcardChild *node
+
+	// param
+	paramChild *node
 }
 
 // returns true if the node has parametric children or wildcard
@@ -99,20 +105,6 @@ func (n *node) getEdge(label byte) *node {
 		return n.edges[idx].node
 	}
 
-	return nil
-}
-
-func (n node) parametricChild() *node {
-	if n.parameterCount > 0 {
-		return n.getEdge(paramChar)
-	}
-	return nil
-}
-
-func (n node) wildCardChild() *node {
-	if n.wildcardCount > 0 {
-		return n.getEdge(wildcardChar)
-	}
 	return nil
 }
 
@@ -222,14 +214,17 @@ func (t *tree) addEdge(route *Route) *node {
 					label: segment[0],
 					node:  &node,
 				}
-				switch e.label {
+				switch segment[0] {
 				case paramChar:
 					parent.parameterCount++
+					parent.paramChild = &node
 				case wildcardChar:
 					parent.wildcardCount++
+					parent.wildcardChild = &node
 				}
 
 				parent.addEdge(e)
+
 				parent = &node
 				t.size++
 			}
@@ -274,7 +269,7 @@ func (t *tree) addEdge(route *Route) *node {
 			label: n.prefix[wanted],
 			node:  n,
 		}
-		child.addEdge(e)
+
 		n.parent = child
 		n.prefix = n.prefix[wanted:]
 
@@ -283,10 +278,15 @@ func (t *tree) addEdge(route *Route) *node {
 			case paramChar:
 				child.parameterCount++
 				parent.parameterCount--
+				child.paramChild = n
 			case wildcardChar:
 				child.wildcardCount++
 				parent.wildcardCount--
+				child.wildcardChild = n
+
 			}
+
+			child.addEdge(e)
 		}
 
 		search = search[wanted:]
@@ -316,12 +316,15 @@ func (t *tree) addEdge(route *Route) *node {
 			switch e.label {
 			case paramChar:
 				child.parameterCount++
+				child.paramChild = &node
 			case wildcardChar:
 				child.wildcardCount++
+				child.wildcardChild = &node
 			}
 
-			node.parent = child
 			child.addEdge(e)
+			node.parent = child
+
 			child = &node
 			t.size++
 		}
@@ -347,15 +350,17 @@ func (t *tree) findRoute(search string) (*Route, Params) {
 
 		// we traversed all the trie
 		// return the route at the node
-		if len(search) == 0 {
+		slen := len(search)
+		if slen == 0 {
 			return n.route, params[:pcount]
 		}
 
 		parent := n
 		edge := search[0]
 		n = n.getEdge(edge)
+
 		// no edge found, route does not exist
-		if n == nil || !strings.HasPrefix(search, n.prefix) {
+		if n == nil || slen < len(n.prefix) || search[0:len(n.prefix)] != n.prefix {
 			if parent.isParametrized() {
 				// we couldn't find a match, so we go back one level
 				// and we check if there's a wildcard or a parameter at the parent level.
@@ -368,29 +373,28 @@ func (t *tree) findRoute(search string) (*Route, Params) {
 				if idx == -1 {
 					// we found a terminal wildcard, i.e. "\example\enzo" with route "\example\*"
 					// return the node route
-					if n = parent.parametricChild(); n != nil {
+					if n = parent.paramChild; n != nil {
 						// we found a parameter in the last segment, capture it and return
-						p := Param{Key: n.prefix[1:], Value: search}
-						params[pcount] = p
-						pcount++
+						params[pcount].Key = n.prefix[1:]
+						params[pcount].Value = search
 						return n.route, params[:pcount]
 					}
 
-					if n = parent.wildCardChild(); n != nil {
+					if n = parent.wildcardChild; n != nil {
 						return n.route, params[:pcount]
 					}
 
 					break
 				}
 
-				child := parent.parametricChild()
+				child := parent.paramChild
 
 				if child != nil {
-					p := Param{Key: child.prefix[1:], Value: search[:idx]}
-					params[pcount] = p
+					params[pcount].Key = child.prefix[1:]
+					params[pcount].Value = search[:idx]
 					pcount++
 				} else {
-					child = parent.wildCardChild()
+					child = parent.wildcardChild
 				}
 
 				n = child

@@ -30,10 +30,6 @@ type controllerTest struct {
 }
 
 func (controller *controllerTest) Process(ctx context.Context, out *ResponseOutput) Redirect {
-	in := InputsFromContext(ctx)
-	for k, _ := range in {
-		log.Printf("key %s -> %s\n", k, in[k].Value())
-	}
 	renderer := TextRenderer{}
 	renderer.Data = controller.name
 	out.Renderer = &renderer
@@ -61,6 +57,45 @@ func (self *authenticatorTest) Authenticate(ctx context.Context) context.Context
 		self.t.Fatalf("User is nil")
 	}
 	return ctx
+}
+
+func BenchmarkRequest_Simple(b *testing.B) {
+	opts := aetest.Options{}
+	opts.StartupTimeout = 60 * time.Second
+	instance, err := aetest.NewInstance(&opts)
+
+	if err != nil {
+		b.Fatalf("Error creating instance %v", err)
+	}
+	defer instance.Close()
+
+	//set up mage
+	m := Instance()
+
+	m.SetRoute("/simple", func(ctx context.Context) Controller {
+		return &controllerTest{name: "simple"}
+	}, nil)
+
+	app := &appTest{}
+
+	m.LaunchApp(app)
+
+	req, err := instance.NewRequest(http.MethodGet, "/simple", nil)
+
+	if err != nil {
+		b.Fatalf("Error creating request %v", err)
+	}
+
+	b.Run("process route", func(b *testing.B) {
+		b.ReportAllocs()
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			b.StopTimer()
+			recorder := httptest.NewRecorder()
+			b.StartTimer()
+			m.Run(recorder, req)
+		}
+	})
 }
 
 func TestMage_Run(t *testing.T) {

@@ -16,6 +16,7 @@ type Entity struct {
 	Child      Child
 	EmptyChild EmptyChild `model:"zero"`
 	ReadonlyChild `model:"readonly"`
+	Nomo NoModel
 }
 
 type Child struct {
@@ -39,6 +40,10 @@ type ReadonlyChild struct {
 	Value int
 }
 
+type NoModel struct {
+	Name string
+}
+
 const total = 100
 const find = 10
 
@@ -60,6 +65,7 @@ func TestCreateEmpty(t *testing.T) {
 		t.Fatal("empty child is not skipIfZero")
 	}
 
+	entity.Nomo.Name = "nomo"
 	entity.Name = "entity"
 	entity.Child.Name = "child"
 	err = Create(ctx, &entity)
@@ -74,6 +80,10 @@ func TestCreateEmpty(t *testing.T) {
 
 	if entity.EmptyChild.Key != nil {
 		t.Fatal("empty child has non-nil key")
+	}
+
+	if entity.Nomo.Name != "nomo" {
+		t.Fatal("Nomodel has invalid value")
 	}
 
 	service.OnEnd(ctx)

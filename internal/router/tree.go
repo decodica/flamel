@@ -215,7 +215,6 @@ func (t *tree) addEdge(route *Route) *node {
 					node.isParametric = true
 				case wildcardChar:
 					parent.wildcardChild = &node
-					node.isParametric = true
 				}
 
 				parent.addEdge(e)
@@ -275,7 +274,6 @@ func (t *tree) addEdge(route *Route) *node {
 				n.isParametric = true
 			case wildcardChar:
 				child.wildcardChild = n
-				n.isParametric = true
 			}
 
 			child.addEdge(e)
@@ -308,6 +306,7 @@ func (t *tree) addEdge(route *Route) *node {
 			switch e.label {
 			case paramChar:
 				child.paramChild = &node
+				node.isParametric = true
 			case wildcardChar:
 				child.wildcardChild = &node
 			}
@@ -324,7 +323,7 @@ func (t *tree) addEdge(route *Route) *node {
 }
 
 // Finds the requested route
-func (t *tree) findRoute(wanted string) (*Route, Params) {
+func (t tree) findRoute(wanted string) (*Route, Params) {
 	n := t.root
 
 	search := wanted
@@ -375,7 +374,7 @@ func (t *tree) findRoute(wanted string) (*Route, Params) {
 				break
 			}
 
-			// else, we must reconsider our path by walking a parametric route:
+			// else, we must reconsider our path by walking a parametric route: backtracking
 			// we couldn't find a match, so we go back to the last parametric node we found on the way.
 			// If such a node exists, we walk the parametric route looking for the correct match.
 
@@ -392,7 +391,7 @@ func (t *tree) findRoute(wanted string) (*Route, Params) {
 				params[pcount].Value =  wanted[tag: tag + until]
 				pcount++
 			} else {
-				n = lp.wildcardChild
+				return lp.wildcardChild.route, params[:pcount]
 			}
 
 			search = wanted[tag + until:]

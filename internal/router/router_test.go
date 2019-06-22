@@ -14,15 +14,14 @@ func TestFindRoute(t *testing.T) {
 	m.SetRoute("/static", nil)
 	m.SetRoute("/stai", nil)
 	m.SetRoute("/static/*",nil)
-	m.SetRoute("/static/*/carlo", nil)
 	m.SetRoute("/param/:param", nil)
 	m.SetRoute("/param/:param/end", nil)
 	m.SetRoute("/param/:param/:end",nil)
 	m.SetRoute("/param/first/second",nil)
 
-	mustFind := []string{"/antani", "/static", "/station", "", "/static/wildcard", "/static/wildcard/carlo", "/param/3", "/param/3/end", "/param/3/5", "/param/first/second"}
+	mustFind := []string{"/antani", "/static", "/station", "", "/static/wildcard", "/static/wildcard/first/second/third", "/param/3", "/param/3/end", "/param/3/5", "/param/first/second"}
 
-	mustFail := []string{"/static/noroot/notexists", "/param/3/2/1", "/param/3/end/5"}
+	mustFail := []string{"/param/3/2/1", "/param/3/end/5"}
 
 	for _, r := range mustFind {
 		route, params := m.tree.findRoute(r)

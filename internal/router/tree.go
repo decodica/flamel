@@ -336,14 +336,17 @@ func (t tree) findRoute(wanted string) (*Route, Params) {
 		params = make(Params, t.maxArgs)
 	}
 
-	var lp *node
 	// lp is the last parametric node we encountered
+	var lp *node
+
+	var wild *node
 
 	// index of the segment of the path we are pointing to
 	idx := 0
 
 	// freeze index in case of parameter
 	tag := 0
+
 	for {
 
 		// we traversed all the trie
@@ -362,6 +365,9 @@ func (t tree) findRoute(wanted string) (*Route, Params) {
 
 		if n != nil && n.hasParametricChildren() {
 			lp = n
+			if w := lp.wildcardChild; w != nil {
+				wild = w
+			}
 			// freeze the param value to the moment we find a parameter, in case we need to go back
 			tag = len(wanted) - slen + 1
 		}
@@ -385,13 +391,12 @@ func (t tree) findRoute(wanted string) (*Route, Params) {
 				until = len(wanted) - tag
 			}
 
-			n = lp.paramChild
-			if n != nil {
+			if n = lp.paramChild; n != nil {
 				params[pcount].Key = n.prefix[1:]
 				params[pcount].Value =  wanted[tag: tag + until]
 				pcount++
 			} else {
-				return lp.wildcardChild.route, params[:pcount]
+				n = lp.wildcardChild
 			}
 
 			search = wanted[tag + until:]
@@ -400,6 +405,10 @@ func (t tree) findRoute(wanted string) (*Route, Params) {
 
 		idx = len(n.prefix)
 		search = search[idx:]
+	}
+
+	if wild != nil {
+		return wild.route, params
 	}
 
 	return nil, nil

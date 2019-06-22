@@ -67,7 +67,7 @@ type node struct {
 }
 
 // returns true if the node has parametric children or wildcard
-func (n node) isParametrized() bool {
+func (n node) isParametric() bool {
 	return n.parameterCount + n.wildcardCount > 0
 }
 
@@ -163,7 +163,9 @@ func (t *tree) insert(route *Route) {
 	// walk the tree and count all the path params
 	params := 0
 	for n.parent != nil {
-		params += n.params()
+		if n.isParametric() {
+			params++
+		}
 		n = n.parent
 	}
 
@@ -361,7 +363,7 @@ func (t *tree) findRoute(search string) (*Route, Params) {
 
 		// no edge found, route does not exist
 		if n == nil || slen < len(n.prefix) || search[0:len(n.prefix)] != n.prefix {
-			if parent.isParametrized() {
+			if parent.isParametric() {
 				// we couldn't find a match, so we go back one level
 				// and we check if there's a wildcard or a parameter at the parent level.
 				// If so, we walk the wildcard route looking for the correct match.
@@ -377,7 +379,7 @@ func (t *tree) findRoute(search string) (*Route, Params) {
 						// we found a parameter in the last segment, capture it and return
 						params[pcount].Key = n.prefix[1:]
 						params[pcount].Value = search
-						return n.route, params[:pcount]
+						return n.route, params[:pcount + 1]
 					}
 
 					if n = parent.wildcardChild; n != nil {

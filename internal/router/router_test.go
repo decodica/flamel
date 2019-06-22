@@ -1,6 +1,7 @@
 package router
 
 import (
+	"bytes"
 	"testing"
 )
 
@@ -9,23 +10,35 @@ func TestFindRoute(t *testing.T) {
 	m := NewRouter()
 	m.SetRoute("", nil)
 	m.SetRoute("/*", nil)
+	m.SetRoute("/:param", nil)
 	m.SetRoute("/static", nil)
+	m.SetRoute("/stai", nil)
 	m.SetRoute("/static/*",nil)
 	m.SetRoute("/static/*/carlo", nil)
 	m.SetRoute("/param/:param", nil)
 	m.SetRoute("/param/:param/end", nil)
 	m.SetRoute("/param/:param/:end",nil)
+	m.SetRoute("/param/first/second",nil)
 
-	mustFind := []string{"/antani", "/static", "", "/static/wildcard", "/static/wildcard/carlo", "/param/3", "/param/3/end", "/param/3/5"}
+	mustFind := []string{"/antani", "/static", "/station", "", "/static/wildcard", "/static/wildcard/carlo", "/param/3", "/param/3/end", "/param/3/5", "/param/first/second"}
 
 	mustFail := []string{"/static/noroot/notexists", "/param/3/2/1", "/param/3/end/5"}
 
 	for _, r := range mustFind {
-		route, _ := m.tree.findRoute(r)
+		route, params := m.tree.findRoute(r)
 		if route == nil {
 			t.Fatalf("couldn't find route %s", r)
 		}
-		t.Logf("found route %s for request %s", route.Name, r)
+
+		var builder bytes.Buffer
+		for _, p := range params {
+			builder.WriteString(p.Key)
+			builder.WriteString(" = ")
+			builder.WriteString(p.Value)
+			builder.WriteString(", ")
+		}
+
+		t.Logf("found route %s for request %s with params %s", route.Name, r, builder.String())
 	}
 
 	for _, r := range mustFail {
@@ -34,6 +47,19 @@ func TestFindRoute(t *testing.T) {
 			t.Fatalf("should not find route %s for url %s", route.Name, r)
 		}
 		t.Logf("correctly did not find route %s", r)
+	}
+}
+
+func TestMaxParams(t *testing.T) {
+	m := NewRouter()
+	m.SetRoute("", nil)
+	m.SetRoute("/*", nil)
+	m.SetRoute("/:param", nil)
+	m.SetRoute("/three/:first/:second/:third", nil)
+	m.SetRoute("/three/first/second/third/:fourth", nil)
+
+	if m.tree.maxArgs != 3 {
+		t.Fatalf("couldn't determine max params. Found %d max params instead of 3", m.tree.maxArgs)
 	}
 }
 

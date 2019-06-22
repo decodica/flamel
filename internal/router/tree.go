@@ -44,12 +44,6 @@ type node struct {
 	// route associated with the node. It can be nil
 	route *Route
 
-	// number of wildcard as direct children
-	wildcardCount int
-
-	// number of parameters as direct children
-	parameterCount int
-
 	//prefix is the common prefix to ignore
 	prefix string
 
@@ -64,15 +58,14 @@ type node struct {
 
 	// param
 	paramChild *node
+
+	// true if the node is parametric or a wildcard
+	isParametric bool
 }
 
 // returns true if the node has parametric children or wildcard
-func (n node) isParametric() bool {
-	return n.parameterCount + n.wildcardCount > 0
-}
-
-func (n node) params() int {
-	return n.parameterCount + n.wildcardCount
+func (n node) hasParametricChildren() bool {
+	return n.wildcardChild != nil || n.paramChild != nil
 }
 
 func (n *node) addEdge(edge edge) {
@@ -163,7 +156,7 @@ func (t *tree) insert(route *Route) {
 	// walk the tree and count all the path params
 	params := 0
 	for n.parent != nil {
-		if n.isParametric() {
+		if n.isParametric {
 			params++
 		}
 		n = n.parent
@@ -218,11 +211,11 @@ func (t *tree) addEdge(route *Route) *node {
 				}
 				switch segment[0] {
 				case paramChar:
-					parent.parameterCount++
 					parent.paramChild = &node
+					node.isParametric = true
 				case wildcardChar:
-					parent.wildcardCount++
 					parent.wildcardChild = &node
+					node.isParametric = true
 				}
 
 				parent.addEdge(e)
@@ -278,14 +271,11 @@ func (t *tree) addEdge(route *Route) *node {
 		if n.route != nil {
 			switch e.label {
 			case paramChar:
-				child.parameterCount++
-				parent.parameterCount--
 				child.paramChild = n
+				n.isParametric = true
 			case wildcardChar:
-				child.wildcardCount++
-				parent.wildcardCount--
 				child.wildcardChild = n
-
+				n.isParametric = true
 			}
 
 			child.addEdge(e)
@@ -317,10 +307,8 @@ func (t *tree) addEdge(route *Route) *node {
 			}
 			switch e.label {
 			case paramChar:
-				child.parameterCount++
 				child.paramChild = &node
 			case wildcardChar:
-				child.wildcardCount++
 				child.wildcardChild = &node
 			}
 
@@ -336,9 +324,10 @@ func (t *tree) addEdge(route *Route) *node {
 }
 
 // Finds the requested route
-func (t *tree) findRoute(search string) (*Route, Params) {
+func (t *tree) findRoute(wanted string) (*Route, Params) {
 	n := t.root
 
+	search := wanted
 	// maps all params gathered along the path
 	// avoid the use of append
 	var params Params
@@ -348,6 +337,14 @@ func (t *tree) findRoute(search string) (*Route, Params) {
 		params = make(Params, t.maxArgs)
 	}
 
+	var lp *node
+	// lp is the last parametric node we encountered
+
+	// index of the segment of the path we are pointing to
+	idx := 0
+
+	// freeze index in case of parameter
+	tag := 0
 	for {
 
 		// we traversed all the trie
@@ -357,56 +354,53 @@ func (t *tree) findRoute(search string) (*Route, Params) {
 			return n.route, params[:pcount]
 		}
 
-		parent := n
 		edge := search[0]
-		n = n.getEdge(edge)
-
-		// no edge found, route does not exist
-		if n == nil || slen < len(n.prefix) || search[0:len(n.prefix)] != n.prefix {
-			if parent.isParametric() {
-				// we couldn't find a match, so we go back one level
-				// and we check if there's a wildcard or a parameter at the parent level.
-				// If so, we walk the wildcard route looking for the correct match.
-
-				// check if we are at the end of the search, assuming no backslashes as route end
-				idx := strings.IndexByte(string(search), '/')
-
-				// we are processing the last path segment.
-				if idx == -1 {
-					// we found a terminal wildcard, i.e. "\example\enzo" with route "\example\*"
-					// return the node route
-					if n = parent.paramChild; n != nil {
-						// we found a parameter in the last segment, capture it and return
-						params[pcount].Key = n.prefix[1:]
-						params[pcount].Value = search
-						return n.route, params[:pcount + 1]
-					}
-
-					if n = parent.wildcardChild; n != nil {
-						return n.route, params[:pcount]
-					}
-
-					break
-				}
-
-				child := parent.paramChild
-
-				if child != nil {
-					params[pcount].Key = child.prefix[1:]
-					params[pcount].Value = search[:idx]
-					pcount++
-				} else {
-					child = parent.wildcardChild
-				}
-
-				n = child
-				search = search[idx:]
-				continue
-			}
-			break
+		if edge == '/' {
+			lp = nil
 		}
 
-		search = search[len(n.prefix):]
+		n = n.getEdge(edge)
+
+		if n != nil && n.hasParametricChildren() {
+			lp = n
+			// freeze the param value to the moment we find a parameter, in case we need to go back
+			tag = len(wanted) - slen + 1
+		}
+
+		// we arrived at the end of the selected path
+		if n == nil || slen < len(n.prefix) || search[0:len(n.prefix)] != n.prefix {
+
+			// there's no valid parametric node on the way, we can break the loop, the search is over
+			if lp == nil {
+				break
+			}
+
+			// else, we must reconsider our path by walking a parametric route:
+			// we couldn't find a match, so we go back to the last parametric node we found on the way.
+			// If such a node exists, we walk the parametric route looking for the correct match.
+
+			until := strings.IndexByte(wanted[tag:], '/')
+
+			// we are at the end of the string,
+			if until == -1 {
+				until = len(wanted) - tag
+			}
+
+			n = lp.paramChild
+			if n != nil {
+				params[pcount].Key = n.prefix[1:]
+				params[pcount].Value =  wanted[tag: tag + until]
+				pcount++
+			} else {
+				n = lp.wildcardChild
+			}
+
+			search = wanted[tag + until:]
+			continue
+		}
+
+		idx = len(n.prefix)
+		search = search[idx:]
 	}
 
 	return nil, nil

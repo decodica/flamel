@@ -66,6 +66,17 @@ func TestFindRoute(t *testing.T) {
 	}
 }
 
+func TestUpdateRoutes(t *testing.T) {
+	m := NewRouter()
+	m.SetRoute("/:slug", nil)
+	m.SetRoute("/", nil)
+	m.SetRoute("/it/productslisthtml", nil)
+	m.SetRoute("/it/product/:slug",nil)
+	m.SetRoute("/it/product/:slug/:nuance", nil)
+	m.SetRoute("/it/pascal_rule", nil)
+	// to complete
+}
+
 func TestMaxParams(t *testing.T) {
 	m := NewRouter()
 	m.SetRoute("", nil)

@@ -267,17 +267,16 @@ func (t *tree) addEdge(route *Route) *node {
 		n.parent = child
 		n.prefix = n.prefix[wanted:]
 
-		if n.route != nil {
-			switch e.label {
-			case paramChar:
-				child.paramChild = n
-				n.isParametric = true
-			case wildcardChar:
-				child.wildcardChild = n
-			}
 
-			child.addEdge(e)
+		switch e.label {
+		case paramChar:
+			child.paramChild = n
+			n.isParametric = true
+		case wildcardChar:
+			child.wildcardChild = n
 		}
+
+		child.addEdge(e)
 
 		search = search[wanted:]
 		// If the new key was the same of the parent

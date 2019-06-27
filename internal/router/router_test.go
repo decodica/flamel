@@ -20,6 +20,23 @@ func TestFindRoute(t *testing.T) {
 	m.SetRoute("/param/first/second",nil)
 	m.SetRoute("/param/*",nil)
 
+//	m.SetRoute("/*", nil)
+	m.SetRoute("/it/*", nil)
+	//m.SetRoute("/:slug", nil)
+	m.SetRoute("/it/:slug", nil)
+	m.SetRoute("/", nil)
+	m.SetRoute("/it/", nil)
+	m.SetRoute("/productslisthtml", nil)
+	m.SetRoute("/it/productslisthtml", nil)
+	m.SetRoute("/product/:slug/:nuance", nil)
+	m.SetRoute("/it/product/:slug/:nuance", nil)
+	m.SetRoute("/product/:slug", nil)
+	m.SetRoute("/it/product/:slug", nil)
+	m.SetRoute("/privacy", nil)
+	m.SetRoute("/it/privacy", nil)
+	m.SetRoute("/process", nil)
+	m.SetRoute("/it/process", nil)
+
 	mustFind := []string{
 		"/antani",
 		"/static",
@@ -28,11 +45,16 @@ func TestFindRoute(t *testing.T) {
 		"/static/wildcard",
 		"/static/wildcard/3",
 		"/static/wildcard/first/second/third",
+		"/param",
 		"/param/3",
 		"/param/3/end",
 		"/param/3/5",
 		"/param/first/second",
 		"/param/3/end/wildcard",
+		"/it/product",
+		"/product",
+		"/product/abc",
+		"/product/abc/nuance",
 	}
 
 	mustFail := []string{
@@ -64,17 +86,6 @@ func TestFindRoute(t *testing.T) {
 		}
 		t.Logf("correctly did not find route %s", r)
 	}
-}
-
-func TestUpdateRoutes(t *testing.T) {
-	m := NewRouter()
-	m.SetRoute("/:slug", nil)
-	m.SetRoute("/", nil)
-	m.SetRoute("/it/productslisthtml", nil)
-	m.SetRoute("/it/product/:slug",nil)
-	m.SetRoute("/it/product/:slug/:nuance", nil)
-	m.SetRoute("/it/pascal_rule", nil)
-	// to complete
 }
 
 func TestMaxParams(t *testing.T) {

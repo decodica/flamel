@@ -70,6 +70,7 @@ func (n node) hasParametricChildren() bool {
 
 func (n *node) addEdge(edge edge) {
 	n.edges = append(n.edges, edge)
+	edge.node.parent = n
 	n.edges.Sort()
 }
 
@@ -81,6 +82,7 @@ func (n *node) updateEdge(label byte, node *node) {
 
 	if idx < count && n.edges[idx].label == label {
 		n.edges[idx].node = node
+		node.parent = n
 		return
 	}
 
@@ -99,6 +101,10 @@ func (n *node) getEdge(label byte) *node {
 	}
 
 	return nil
+}
+
+func (n node) isLeaf() bool {
+	return len(n.edges) == 0
 }
 
 type tree struct {
@@ -204,7 +210,7 @@ func (t *tree) addEdge(route *Route) *node {
 				}
 
 				segment := segments[i]
-				node := node{route: r, prefix: segment, parent: parent}
+				node := node{route: r, prefix: segment}
 				e := edge{
 					label: segment[0],
 					node:  &node,
@@ -264,9 +270,7 @@ func (t *tree) addEdge(route *Route) *node {
 			node:  n,
 		}
 
-		n.parent = child
 		n.prefix = n.prefix[wanted:]
-
 
 		switch e.label {
 		case paramChar:
@@ -311,7 +315,6 @@ func (t *tree) addEdge(route *Route) *node {
 			}
 
 			child.addEdge(e)
-			node.parent = child
 
 			child = &node
 			t.size++
@@ -340,22 +343,27 @@ func (t tree) findRoute(wanted string) (*Route, Params) {
 
 	var wild *node
 
-	// index of the segment of the path we are pointing to
-	idx := 0
-
 	// freeze index in case of parameter
 	tag := 0
 
 	for {
 
+		var edge byte
+
 		// we traversed all the trie
 		// return the route at the node
 		slen := len(search)
+
 		if slen == 0 {
-			return n.route, params[:pcount]
+			if n.route == nil && lp != nil {
+				n = lp.paramChild
+			} else {
+				return n.route, params[:pcount]
+			}
+		} else {
+			edge = search[0]
 		}
 
-		edge := search[0]
 		if edge == '/' {
 			lp = nil
 		}
@@ -398,16 +406,16 @@ func (t tree) findRoute(wanted string) (*Route, Params) {
 				n = lp.wildcardChild
 			}
 
+			lp = nil
 			search = wanted[tag + until:]
 			continue
 		}
 
-		idx = len(n.prefix)
-		search = search[idx:]
+		search = search[len(n.prefix):]
 	}
 
 	if wild != nil {
-		return wild.route, params
+		return wild.route, params[:pcount]
 	}
 
 	return nil, nil

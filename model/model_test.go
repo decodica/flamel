@@ -56,7 +56,7 @@ func TestCreateEmpty(t *testing.T) {
 	defer done()
 
 	service := Service{}
-	service.project = "mage-middleware"
+	service.project = "flamel-middleware"
 	ctx = service.OnStart(ctx)
 	// test correct indexing
 	entity := Entity{}
@@ -96,7 +96,7 @@ func TestUpdate(t *testing.T) {
 	}
 	defer done()
 
-	service := Service{project: "mage-middleware"}
+	service := Service{project: "flamel-middleware"}
 	ctx = service.OnStart(ctx)
 	rc := ReadonlyChild{}
 	rc.Value = 1

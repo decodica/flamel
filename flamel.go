@@ -1,10 +1,10 @@
-package mage
+package flamel
 
 import (
 	"bytes"
 	"context"
-	"distudio.com/mage/cors"
-	"distudio.com/mage/internal/router"
+	"decodica.com/flamel/cors"
+	"decodica.com/flamel/internal/router"
 	"fmt"
 	"google.golang.org/appengine"
 	"io/ioutil"
@@ -13,7 +13,7 @@ import (
 	"sync"
 )
 
-type mage struct {
+type flamel struct {
 	Config
 	app        Application
 	bufferPool *sync.Pool
@@ -27,18 +27,18 @@ type Application interface {
 	AfterResponse(ctx context.Context)
 }
 
-func (mage *mage) LaunchApp(application Application) {
-	if mage.app != nil {
+func (fl *flamel) LaunchApp(application Application) {
+	if fl.app != nil {
 		panic("Application already set")
 	}
-	mage.app = application
-	for _, s := range mage.services {
+	fl.app = application
+	for _, s := range fl.services {
 		s.Initialize()
 	}
 }
 
-func (mage *mage) AddService(service Service) {
-	mage.services = append(mage.services, service)
+func (fl *flamel) AddService(service Service) {
+	fl.services = append(fl.services, service)
 }
 
 type Config struct {
@@ -56,20 +56,21 @@ func DefaultConfig() Config {
 
 const (
 	//request related special vars
-	KeyRequestInputs = "request-inputs"
-	KeyRequestMethod = "method"
-	KeyRequestIPV4   = "remote-address"
-	KeyRequestJSON   = "__mage_json__"
-	KeyRequestURL    = "__mage_URL__"
-	KeyRequestScheme = "__mage_Scheme__"
+	KeyRequestInputs = "__flamel_request_inputs__"
+	KeyRequestMethod = "__flamel__method__"
+	KeyRequestIPV4   = "__flamel_remote_address__"
+	KeyRequestJSON   = "__flamel_json__"
+	KeyRequestURL    = "__flamel_URL__"
+	KeyRequestScheme = "__flamel_scheme__"
+	KeyRequestQuery = "__flamel_query__"
 )
 
 //mage is a singleton
-var instance *mage
+var instance *flamel
 var once sync.Once
 
 //singleton instance
-func Instance() *mage {
+func Instance() *flamel {
 
 	once.Do(func() {
 		config := DefaultConfig()
@@ -79,34 +80,34 @@ func Instance() *mage {
 				return bytes.Buffer{}
 			},
 		}
-		instance = &mage{Config: config, bufferPool: &pool}
+		instance = &flamel{Config: config, bufferPool: &pool}
 	})
 
 	return instance
 }
 
-func (mage *mage) Run(w http.ResponseWriter, req *http.Request) {
+func (fl *flamel) Run(w http.ResponseWriter, req *http.Request) {
 
-	if mage.app == nil {
-		panic("Must set MAGE Application!")
+	if fl.app == nil {
+		panic("must set Flamel's application!")
 	}
 
 	ctx := appengine.NewContext(req)
 
-	ctx = mage.app.OnStart(ctx)
-	for _, s := range mage.services {
+	ctx = fl.app.OnStart(ctx)
+	for _, s := range fl.services {
 		ctx = s.OnStart(ctx)
 	}
 
 	//if we enforce the hostname and the request hostname doesn't match, we redirect to the requested host
 	//host is in the form domainname.com
-	if mage.Config.EnforceHostnameRedirect != "" && mage.Config.EnforceHostnameRedirect != req.Host {
+	if fl.Config.EnforceHostnameRedirect != "" && fl.Config.EnforceHostnameRedirect != req.Host {
 		scheme := "http"
 		if req.URL.Scheme == "https" {
 			scheme = "https"
 		}
 
-		hst := fmt.Sprintf("%s://%s%s", scheme, mage.Config.EnforceHostnameRedirect, req.URL.Path)
+		hst := fmt.Sprintf("%s://%s%s", scheme, fl.Config.EnforceHostnameRedirect, req.URL.Path)
 
 		if req.URL.RawQuery != "" {
 			hst = fmt.Sprintf("%s?%s", hst, req.URL.RawQuery)
@@ -122,8 +123,8 @@ func (mage *mage) Run(w http.ResponseWriter, req *http.Request) {
 	hasOrigin := origin != ""
 
 	//handle CORS requests
-	if hasOrigin && mage.Config.CORS != nil && req.Method == http.MethodOptions {
-		mage.Config.CORS.HandleOptions(w, origin)
+	if hasOrigin && fl.Config.CORS != nil && req.Method == http.MethodOptions {
+		fl.Config.CORS.HandleOptions(w, origin)
 		w.Header().Set("Content-Type", "text/html; charset=utf8")
 		renderer := TextRenderer{}
 		renderer.Render(w)
@@ -131,7 +132,7 @@ func (mage *mage) Run(w http.ResponseWriter, req *http.Request) {
 	}
 
 	//add inputs to the context object
-	ctx, err := mage.parseRequestInputs(ctx, req)
+	ctx, err := fl.parseRequestInputs(ctx, req)
 	if err != nil {
 		renderer := TextRenderer{}
 		renderer.Data = err.Error()
@@ -140,7 +141,7 @@ func (mage *mage) Run(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	ctx, err, controller := mage.RouteForPath(ctx, req.URL.Path)
+	ctx, err, controller := fl.RouteForPath(ctx, req.URL.Path)
 
 	if err == router.ErrRouteNotFound {
 		renderer := TextRenderer{}
@@ -158,14 +159,14 @@ func (mage *mage) Run(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	defer mage.destroy(ctx, controller)
+	defer fl.destroy(ctx, controller)
 	out := newResponseOutput()
 
 	//handle the CORS framework
-	if mage.Config.CORS != nil {
+	if fl.Config.CORS != nil {
 
 		//handle the AMP case
-		if mage.Config.CORS.AMPForUrl(req.URL.Path) {
+		if fl.Config.CORS.AMPForUrl(req.URL.Path) {
 			AMPsource, hasSource := req.URL.Query()[cors.KeyAmpSourceOrigin]
 
 			//if the source is not set the AMP request is invalid
@@ -184,14 +185,14 @@ func (mage *mage) Run(w http.ResponseWriter, req *http.Request) {
 
 			//if the value of AMP_SAME_ORIGIN is different from true we validate the origin
 			//amongst those accepted
-			if mage.Config.CORS.ValidateAMP(w, AMPsource[0]) != nil {
+			if fl.Config.CORS.ValidateAMP(w, AMPsource[0]) != nil {
 				w.WriteHeader(http.StatusNotAcceptable)
 				return
 			}
 		}
 
 		if hasOrigin {
-			allowed := mage.Config.CORS.HandleOptions(w, origin)
+			allowed := fl.Config.CORS.HandleOptions(w, origin)
 			if !allowed {
 				w.WriteHeader(http.StatusForbidden)
 				return
@@ -225,20 +226,24 @@ func (mage *mage) Run(w http.ResponseWriter, req *http.Request) {
 	}
 }
 
-func (mage *mage) destroy(ctx context.Context, controller Controller) {
+func (fl *flamel) destroy(ctx context.Context, controller Controller) {
 	controller.OnDestroy(ctx)
 	controller = nil
-	for _, s := range mage.services {
+	for _, s := range fl.services {
 		s.OnEnd(ctx)
 	}
-	mage.app.AfterResponse(ctx)
+	fl.app.AfterResponse(ctx)
 }
 
-func (mage mage) parseRequestInputs(ctx context.Context, req *http.Request) (context.Context, error) {
+func (fl flamel) parseRequestInputs(ctx context.Context, req *http.Request) (context.Context, error) {
 	reqValues := make(RequestInputs)
 
 	reqValues[KeyRequestScheme] = requestInput{
 		values: []string{req.URL.Scheme},
+	}
+
+	reqValues[KeyRequestQuery] = requestInput{
+		values: []string{req.URL.RawQuery},
 	}
 
 	reqValues[KeyRequestURL] = requestInput{

@@ -1,4 +1,4 @@
-package mage
+package flamel
 
 import (
 	"encoding/json"

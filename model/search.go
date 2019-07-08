@@ -232,7 +232,7 @@ func searchPutMulti(ctx context.Context, models []*Model, name string) error {
 	return err
 }
 
-func searchDelete(ctx context.Context, model Model, name string) error {
+func searchDelete(ctx context.Context, model *Model, name string) error {
 	index, err := search.Open(name)
 	if nil != err {
 		return nil

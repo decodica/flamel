@@ -63,6 +63,13 @@ func Delete(ctx context.Context, ref modelable, parent modelable) (err error) {
 	client := client(ctx)
 	err = client.Delete(ctx, child.Key)
 	if err == nil {
+
+		if child.searchable {
+			if err := searchDelete(ctx, child, child.Name()); err != nil {
+				return err
+			}
+		}
+
 		if err = deleteFromMemcache(ctx, child); err != nil && err != memcache.ErrCacheMiss {
 			return err
 		}

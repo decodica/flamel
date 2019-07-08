@@ -1,8 +1,8 @@
-package mage
+package flamel
 
 import (
 	"context"
-	"distudio.com/mage/model"
+	"decodica.com/flamel/model"
 	"fmt"
 	"google.golang.org/appengine/aetest"
 	"google.golang.org/appengine/memcache"
@@ -185,7 +185,7 @@ func (controller *readController) Process(ctx context.Context, out *ResponseOutp
 }
 
 func TestModelCalls_Run(t *testing.T) {
-	if err := os.Setenv("DATASTORE_PROJECT_ID", "mage-middleware"); err != nil {
+	if err := os.Setenv("DATASTORE_PROJECT_ID", "flamel-middleware"); err != nil {
 		t.Fatalf("unable to set project id. error %s", err.Error())
 	}
 	t.Log("*** TEST STARTED ***")

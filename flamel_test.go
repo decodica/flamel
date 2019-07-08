@@ -1,4 +1,4 @@
-package mage
+package flamel
 
 import (
 	"context"
@@ -69,7 +69,7 @@ func BenchmarkRequest_Simple(b *testing.B) {
 	}
 	defer instance.Close()
 
-	//set up mage
+	//set up flamel
 	m := Instance()
 
 	m.SetRoute("/simple", func(ctx context.Context) Controller {
@@ -189,10 +189,6 @@ func BenchmarkFindRoute(b *testing.B) {
 		b.Fatalf("Error creating request %v", err)
 	}
 	ctx := appengine.NewContext(req)
-
-	if err != nil {
-		b.Fatalf("Error creating context: %s", err)
-	}
 
 	b.Run("Find route", func(b *testing.B) {
 		b.ReportAllocs()

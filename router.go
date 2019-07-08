@@ -1,8 +1,8 @@
-package mage
+package flamel
 
 import (
 	"context"
-	"distudio.com/mage/internal/router"
+	"decodica.com/flamel/internal/router"
 )
 
 type Router interface {

@@ -7,7 +7,7 @@ import (
 	"os"
 )
 
-const name = "__mage_model_service"
+const name = "__flamel_model_service"
 const keyDatastoreClient = "__model_ds_client"
 
 type Service struct {

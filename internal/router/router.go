@@ -17,7 +17,7 @@ const (
 
 var ErrRouteNotFound = errors.New("can't find route")
 
-const RoutingParamsKey = "__routing_params"
+const RoutingParamsKey = "__flamel_routing_params__"
 
 const paramRegex = `:(\w+)`
 const wildcardChar = '*'

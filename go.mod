@@ -1,4 +1,4 @@
-module distudio.com/mage
+module decodica.com/flamel
 
 require (
 	cloud.google.com/go v0.38.0

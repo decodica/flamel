@@ -1,7 +1,7 @@
-package mage
+package flamel
 
 import (
-	"distudio.com/mage/model"
+	"decodica.com/flamel/model"
 	"golang.org/x/net/context"
 	"google.golang.org/appengine/aetest"
 	"math/rand"

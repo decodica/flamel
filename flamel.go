@@ -21,9 +21,9 @@ type flamel struct {
 }
 
 type Application interface {
-	//called as soon as the request is received and the context is created
+	// called as soon as the request is received and the context is created
 	OnStart(ctx context.Context) context.Context
-	//called after each response has been finalized
+	// called after each response has been finalized
 	AfterResponse(ctx context.Context)
 }
 
@@ -65,7 +65,6 @@ const (
 	KeyRequestQuery = "__flamel_query__"
 )
 
-//mage is a singleton
 var instance *flamel
 var once sync.Once
 
@@ -86,7 +85,12 @@ func Instance() *flamel {
 	return instance
 }
 
-func (fl *flamel) Run(w http.ResponseWriter, req *http.Request) {
+func (fl *flamel) Run() {
+	http.HandleFunc("/", fl.run)
+	appengine.Main()
+}
+
+func (fl *flamel) run(w http.ResponseWriter, req *http.Request) {
 
 	if fl.app == nil {
 		panic("must set Flamel's application!")
@@ -200,7 +204,7 @@ func (fl *flamel) Run(w http.ResponseWriter, req *http.Request) {
 		}
 	}
 
-	redirect := controller.Process(ctx, &out)
+	response := controller.Process(ctx, &out)
 
 	//add headers and cookies
 	for _, v := range out.cookies {
@@ -211,12 +215,12 @@ func (fl *flamel) Run(w http.ResponseWriter, req *http.Request) {
 		w.Header().Set(k, v)
 	}
 
-	if redirect.Status >= 300 && redirect.Status < 400 {
-		http.Redirect(w, req, redirect.Location, redirect.Status)
+	if response.Status >= 300 && response.Status < 400 {
+		http.Redirect(w, req, response.Location, response.Status)
 	}
 
-	if redirect.Status >= 400 {
-		w.WriteHeader(redirect.Status)
+	if response.Status >= 400 {
+		w.WriteHeader(response.Status)
 	}
 
 	err = out.Renderer.Render(w)

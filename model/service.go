@@ -26,7 +26,7 @@ func (service *Service) Initialize() {
 	service.project = os.Getenv("DATASTORE_PROJECT_ID")
 }
 
-// adds the appengine client into the context
+// adds the appengine client to the context
 func (service *Service) OnStart(ctx context.Context) context.Context {
 	client, err := datastore.NewClient(ctx, service.project)
 	if err != nil {

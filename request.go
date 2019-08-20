@@ -38,7 +38,7 @@ func (req requestInput) Files() []*multipart.FileHeader {
 	return req.files
 }
 
-type Redirect struct {
+type HttpResponse struct {
 	Status   int
 	Location string
 }

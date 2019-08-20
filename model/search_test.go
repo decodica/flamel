@@ -64,6 +64,9 @@ func resetDatastoreEmulator(t *testing.T) {
 func newContextWithStartupTime(t *testing.T, secs int) (func(), context.Context)  {
 	opts := aetest.Options{}
 	opts.StartupTimeout = time.Duration(secs) * time.Second
+	hasEmu := true
+	opts.SupportDatastoreEmulator = &hasEmu
+	opts.StronglyConsistentDatastore = true
 	inst, err := aetest.NewInstance(&opts)
 	if err != nil {
 		t.Fatalf("error creating instance: %s", err.Error())

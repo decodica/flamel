@@ -2,7 +2,6 @@ package model
 
 import (
 	"fmt"
-	"google.golang.org/appengine/aetest"
 	"google.golang.org/appengine/log"
 	"google.golang.org/appengine/memcache"
 	"reflect"
@@ -44,20 +43,20 @@ type NoModel struct {
 	Name string
 }
 
-const total = 100
-const find = 10
-
 func TestCreateEmpty(t *testing.T) {
 
-	ctx, done, err := aetest.NewContext()
-	if err != nil {
-		t.Fatal(err)
-	}
+	done, ctx := newContextWithStartupTime(t, 60)
 	defer done()
 
 	service := Service{}
-	service.project = "flamel-middleware"
+	service.Initialize()
+
 	ctx = service.OnStart(ctx)
+	defer service.OnEnd(ctx)
+
+	resetDatastoreEmulator(t)
+
+
 	// test correct indexing
 	entity := Entity{}
 	index(&entity)
@@ -68,7 +67,7 @@ func TestCreateEmpty(t *testing.T) {
 	entity.Nomo.Name = "nomo"
 	entity.Name = "entity"
 	entity.Child.Name = "child"
-	err = Create(ctx, &entity)
+	err := Create(ctx, &entity)
 	if err != nil {
 		t.Fatal(err.Error())
 	}
@@ -85,22 +84,23 @@ func TestCreateEmpty(t *testing.T) {
 	if entity.Nomo.Name != "nomo" {
 		t.Fatal("Nomodel has invalid value")
 	}
-
-	service.OnEnd(ctx)
 }
 
 func TestUpdate(t *testing.T) {
-	ctx, done, err := aetest.NewContext()
-	if err != nil {
-		t.Fatal(err)
-	}
+	done, ctx := newContextWithStartupTime(t, 60)
 	defer done()
 
-	service := Service{project: "flamel-middleware"}
+	service := Service{}
+	service.Initialize()
+
 	ctx = service.OnStart(ctx)
+	defer service.OnEnd(ctx)
+
+	resetDatastoreEmulator(t)
+
 	rc := ReadonlyChild{}
 	rc.Value = 1
-	err = Create(ctx, &rc)
+	err := Create(ctx, &rc)
 	if err != nil {
 		t.Fatal(err.Error())
 	}
@@ -148,20 +148,23 @@ func TestUpdate(t *testing.T) {
 	if entity.Child.Name != "" {
 		t.Fatalf("child has not been updated. Name is %s", entity.Child.Name)
 	}
-
-	service.OnEnd(ctx)
 }
 
 func TestDelete(t *testing.T) {
 
-	ctx, done, err := aetest.NewContext()
-	if err != nil {
-		t.Fatal(err)
-	}
+	done, ctx := newContextWithStartupTime(t, 60)
 	defer done()
 
+	service := Service{}
+	service.Initialize()
+
+	ctx = service.OnStart(ctx)
+	defer service.OnEnd(ctx)
+
+	resetDatastoreEmulator(t)
+
 	rc := ReadonlyChild{}
-	err = Create(ctx, &rc)
+	err := Create(ctx, &rc)
 	if err != nil {
 		log.Errorf(ctx, err.Error())
 	}
@@ -206,13 +209,23 @@ func TestDelete(t *testing.T) {
 	}
 }
 
+
+const total = 100
+const find = 10
+
+// this works with strongly consistent datastore (i.e. V3), while fails with eventual consistency
 func TestModel(t *testing.T) {
 
-	ctx, done, err := aetest.NewContext()
-	if err != nil {
-		t.Fatal(err)
-	}
+	done, ctx := newContextWithStartupTime(t, 60)
 	defer done()
+
+	service := Service{}
+	service.Initialize()
+
+	ctx = service.OnStart(ctx)
+	defer service.OnEnd(ctx)
+
+	resetDatastoreEmulator(t)
 
 	for i := 0; i < total; i++ {
 		entity := Entity{}
@@ -226,22 +239,29 @@ func TestModel(t *testing.T) {
 		}
 	}
 
-	err = memcache.Flush(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
-
 	dst := make([]*Entity, 0)
 
 	q := NewQuery(&Entity{})
 	q = q.WithField("Num >", find)
-	err = q.GetMulti(ctx, &dst)
+	q = q.OrderBy("Num", ASC)
+	err := q.GetMulti(ctx, &dst)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	if len(dst) != total-find-1 {
-		t.Fatalf("invalid number of data returned. Count is %d", len(dst))
+	many := total - find - 1
+	t.Logf("looking for values with num greater than %d. There must be exactly %d entities", find, many)
+
+	if len(dst) != many {
+
+		last := find
+		for _, e := range dst {
+			if e.Num - last > 1 {
+				t.Logf("gap found between %d and %d", last, e.Num)
+			}
+			last = e.Num
+		}
+		t.Fatalf("invalid number of data returned. Count is %d, it must be %d", len(dst), many)
 	}
 
 	for k := find + 1; k < total; k++ {

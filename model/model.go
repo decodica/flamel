@@ -14,6 +14,7 @@ const tagDomain string = "model"
 const tagNoindex string = "noindex"
 const tagZero string = "zero"
 const tagAncestor string = "ancestor"
+
 // Indicates that the given reference is "readonly"
 // That is, it is provided from outside of the model
 // An example would be the product model on a purchase model:
@@ -117,7 +118,6 @@ func FromIntID(ctx context.Context, m modelable, id int64, ancestor modelable) e
 		}
 		ancKey = ancestor.getModel().Key
 	}
-
 
 	model.Key = datastore.IDKey(model.structName, id, ancKey)
 	return Read(ctx, m)

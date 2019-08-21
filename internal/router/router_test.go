@@ -5,22 +5,21 @@ import (
 	"testing"
 )
 
-
 func TestFindRoute(t *testing.T) {
 	m := NewRouter()
 	m.SetRoute("", nil)
 	m.SetRoute("/:param", nil)
 	m.SetRoute("/static", nil)
 	m.SetRoute("/stai", nil)
-	m.SetRoute("/static/*",nil)
-	m.SetRoute("/static/*/:param",nil)
+	m.SetRoute("/static/*", nil)
+	m.SetRoute("/static/*/:param", nil)
 	m.SetRoute("/param/:param", nil)
 	m.SetRoute("/param/:param/end", nil)
-	m.SetRoute("/param/:param/:end",nil)
-	m.SetRoute("/param/first/second",nil)
-	m.SetRoute("/param/*",nil)
+	m.SetRoute("/param/:param/:end", nil)
+	m.SetRoute("/param/first/second", nil)
+	m.SetRoute("/param/*", nil)
 
-//	m.SetRoute("/*", nil)
+	//	m.SetRoute("/*", nil)
 	m.SetRoute("/it/*", nil)
 	//m.SetRoute("/:slug", nil)
 	m.SetRoute("/it/:slug", nil)

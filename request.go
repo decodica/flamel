@@ -9,7 +9,7 @@ import (
 type RequestInputs map[string]requestInput
 
 type requestInput struct {
-	files []*multipart.FileHeader
+	files  []*multipart.FileHeader
 	values []string
 }
 

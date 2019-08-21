@@ -32,7 +32,7 @@ type encodedStruct struct {
 	searchable bool
 	// if true the modelable does not get written if zeroed
 	skipIfZero    bool
-	readonly bool
+	readonly      bool
 	structName    string
 	fieldNames    map[string]encodedField
 	referencesIdx []int

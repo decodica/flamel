@@ -46,7 +46,7 @@ func resetDatastoreEmulator(t *testing.T) {
 	if addr := os.Getenv("DATASTORE_EMULATOR_HOST"); addr != "" {
 
 		var buf bytes.Buffer
-		resp, err := http.Post("http://" + addr + "/reset", "application/json", &buf)
+		resp, err := http.Post("http://"+addr+"/reset", "application/json", &buf)
 		if err != nil {
 			t.Logf("unable to reset datastore emulator: %s", err.Error())
 			return
@@ -61,7 +61,7 @@ func resetDatastoreEmulator(t *testing.T) {
 	}
 }
 
-func newContextWithStartupTime(t *testing.T, secs int) (func(), context.Context)  {
+func newContextWithStartupTime(t *testing.T, secs int) (func(), context.Context) {
 	opts := aetest.Options{}
 	opts.StartupTimeout = time.Duration(secs) * time.Second
 	hasEmu := true
@@ -86,7 +86,6 @@ func populateSearch(ctx context.Context, t *testing.T) {
 
 	// reset the datastore emulator
 	resetDatastoreEmulator(t)
-
 
 	rigattiere := Job{Name: "Rigattiere"}
 	spazzino := Job{Name: "Spazzino"}

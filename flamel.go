@@ -17,7 +17,7 @@ type flamel struct {
 	Config
 	app        Application
 	bufferPool *sync.Pool
-	services []Service
+	services   []Service
 }
 
 type Application interface {
@@ -52,7 +52,7 @@ const (
 	KeyRequestJSON   = "__flamel_json__"
 	KeyRequestURL    = "__flamel_URL__"
 	KeyRequestScheme = "__flamel_scheme__"
-	KeyRequestQuery = "__flamel_query__"
+	KeyRequestQuery  = "__flamel_query__"
 )
 
 var instance *flamel
@@ -252,15 +252,15 @@ func (fl flamel) parseRequestInputs(ctx context.Context, req *http.Request) (con
 	}
 
 	reqValues[KeyRequestURL] = requestInput{
-		values:[]string{req.URL.Path},
+		values: []string{req.URL.Path},
 	}
 
 	reqValues[KeyRequestMethod] = requestInput{
-		values:[]string{req.Method},
+		values: []string{req.Method},
 	}
 
 	reqValues[KeyRequestIPV4] = requestInput{
-		values:[]string{req.RemoteAddr},
+		values: []string{req.RemoteAddr},
 	}
 
 	//get request params

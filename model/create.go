@@ -136,6 +136,5 @@ func createReference(ctx context.Context, ref *reference) (err error) {
 
 	ref.Key = ref.Modelable.getModel().Key
 
-
 	return nil
 }

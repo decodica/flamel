@@ -21,7 +21,7 @@ incentives the use of stateless logic and helps in implementing proper http resp
 ## Installation
 
 ```bash
-go get -u github.com/decodica/flamel
+go get -u decodica.com/flamel
 ```
 
 ## Usage

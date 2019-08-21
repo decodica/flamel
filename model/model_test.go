@@ -10,12 +10,12 @@ import (
 
 type Entity struct {
 	Model
-	Name       string
-	Num        int
-	Child      Child
-	EmptyChild EmptyChild `model:"zero"`
+	Name          string
+	Num           int
+	Child         Child
+	EmptyChild    EmptyChild `model:"zero"`
 	ReadonlyChild `model:"readonly"`
-	Nomo NoModel
+	Nomo          NoModel
 }
 
 type Child struct {
@@ -55,7 +55,6 @@ func TestCreateEmpty(t *testing.T) {
 	defer service.OnEnd(ctx)
 
 	resetDatastoreEmulator(t)
-
 
 	// test correct indexing
 	entity := Entity{}
@@ -209,7 +208,6 @@ func TestDelete(t *testing.T) {
 	}
 }
 
-
 const total = 100
 const find = 10
 
@@ -256,7 +254,7 @@ func TestModel(t *testing.T) {
 
 		last := find
 		for _, e := range dst {
-			if e.Num - last > 1 {
+			if e.Num-last > 1 {
 				t.Logf("gap found between %d and %d", last, e.Num)
 			}
 			last = e.Num

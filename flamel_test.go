@@ -38,7 +38,7 @@ func (controller *controllerTest) Process(ctx context.Context, out *ResponseOutp
 
 func (controller *controllerTest) OnDestroy(ctx context.Context) {}
 
-type userTest struct {}
+type userTest struct{}
 
 type authenticatorTest struct {
 	Authenticator

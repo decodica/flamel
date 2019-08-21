@@ -51,7 +51,6 @@ func clear(ctx context.Context, m modelable) (err error) {
 	return err
 }
 
-
 // deletes a single reference
 func Delete(ctx context.Context, ref modelable, parent modelable) (err error) {
 

@@ -108,8 +108,8 @@ func (n node) isLeaf() bool {
 }
 
 type tree struct {
-	root *node
-	size int
+	root    *node
+	size    int
 	maxArgs int
 }
 
@@ -400,14 +400,14 @@ func (t tree) findRoute(wanted string) (*Route, Params) {
 
 			if n = lp.paramChild; n != nil {
 				params[pcount].Key = n.prefix[1:]
-				params[pcount].Value =  wanted[tag: tag + until]
+				params[pcount].Value = wanted[tag : tag+until]
 				pcount++
 			} else {
 				n = lp.wildcardChild
 			}
 
 			lp = nil
-			search = wanted[tag + until:]
+			search = wanted[tag+until:]
 			continue
 		}
 

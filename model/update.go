@@ -17,6 +17,7 @@ func (opts *UpdateOptions) InTransaction(attempts int) {
 func NewUpdateOptions() UpdateOptions {
 	return UpdateOptions{}
 }
+
 // Reads data from a modelable and writes it into the corresponding entity of the datastore.
 // If a reference is read from the storage and then assigned to the root modelable
 // the root modelable will point to the loaded entity

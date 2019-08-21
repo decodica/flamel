@@ -27,16 +27,6 @@ type Application interface {
 	AfterResponse(ctx context.Context)
 }
 
-func (fl *flamel) LaunchApp(application Application) {
-	if fl.app != nil {
-		panic("Application already set")
-	}
-	fl.app = application
-	for _, s := range fl.services {
-		s.Initialize()
-	}
-}
-
 func (fl *flamel) AddService(service Service) {
 	fl.services = append(fl.services, service)
 }
@@ -85,7 +75,18 @@ func Instance() *flamel {
 	return instance
 }
 
-func (fl *flamel) Run() {
+func (fl *flamel) Run(application Application) {
+
+	if fl.app != nil {
+		panic("Application already set")
+	}
+	fl.app = application
+
+	// initialize services
+	for _, s := range fl.services {
+		s.Initialize()
+	}
+
 	http.HandleFunc("/", fl.run)
 	appengine.Main()
 }

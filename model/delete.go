@@ -3,7 +3,7 @@ package model
 import (
 	"cloud.google.com/go/datastore"
 	"context"
-	"github.com/pkg/errors"
+	"fmt"
 	"google.golang.org/appengine/memcache"
 	"reflect"
 )
@@ -56,7 +56,7 @@ func Delete(ctx context.Context, ref modelable, parent modelable) (err error) {
 
 	child := ref.getModel()
 	if child.Key == nil {
-		return errors.Errorf("reference %s has a nil key", child.Name())
+		return fmt.Errorf("reference %s has a nil key", child.Name())
 	}
 
 	client := client(ctx)
@@ -90,7 +90,7 @@ func Delete(ctx context.Context, ref modelable, parent modelable) (err error) {
 	}
 
 	if idx == -1 {
-		return errors.Errorf("%s is not a reference of %s", ref.getModel().Name(), parent.getModel().Name())
+		return fmt.Errorf("%s is not a reference of %s", ref.getModel().Name(), parent.getModel().Name())
 	}
 
 	ctype := reflect.TypeOf(ref).Elem()

@@ -147,8 +147,7 @@ func main() {
         }, nil)
     
     app := HelloWorld{}
-    instance.LaunchApp(&app)
-    instance.Run()
+    instance.Run(app)
 }
 ```
 

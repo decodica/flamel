@@ -36,7 +36,7 @@ runtime: go111
 handlers:
 
 - url: /.*
-  script: _go_app
+  script: auto
 ```
 
 Next we need to define our Flamel Application and a controller, by implementing the following interfaces:

@@ -29,11 +29,11 @@ type controllerTest struct {
 	name string
 }
 
-func (controller *controllerTest) Process(ctx context.Context, out *ResponseOutput) Redirect {
+func (controller *controllerTest) Process(ctx context.Context, out *ResponseOutput) HttpResponse {
 	renderer := TextRenderer{}
 	renderer.Data = controller.name
 	out.Renderer = &renderer
-	return Redirect{Status: http.StatusOK}
+	return HttpResponse{Status: http.StatusOK}
 }
 
 func (controller *controllerTest) OnDestroy(ctx context.Context) {}
@@ -78,7 +78,7 @@ func BenchmarkRequest_Simple(b *testing.B) {
 
 	app := &appTest{}
 
-	m.LaunchApp(app)
+	m.launchApp(app)
 
 	req, err := instance.NewRequest(http.MethodGet, "/simple", nil)
 
@@ -93,7 +93,7 @@ func BenchmarkRequest_Simple(b *testing.B) {
 			b.StopTimer()
 			recorder := httptest.NewRecorder()
 			b.StartTimer()
-			m.Run(recorder, req)
+			m.run(recorder, req)
 		}
 	})
 }
@@ -145,7 +145,7 @@ func TestMage_Run(t *testing.T) {
 
 	app := &appTest{}
 
-	m.LaunchApp(app)
+	m.launchApp(app)
 
 	req, err := instance.NewRequest(http.MethodGet, "/auth/3", nil)
 
@@ -153,7 +153,7 @@ func TestMage_Run(t *testing.T) {
 		t.Fatalf("Error creating request %v", err)
 	}
 	recorder := httptest.NewRecorder()
-	m.Run(recorder, req)
+	m.run(recorder, req)
 
 	if recorder.Code >= http.StatusBadRequest {
 		t.Fatalf("Received status %d with body %s", recorder.Code, string(recorder.Body.Bytes()))
@@ -182,7 +182,7 @@ func BenchmarkFindRoute(b *testing.B) {
 
 	app := &appTest{}
 
-	m.LaunchApp(app)
+	m.launchApp(app)
 
 	req, err := instance.NewRequest(http.MethodGet, "/param/5/end/7", nil)
 	if err != nil {

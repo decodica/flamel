@@ -76,7 +76,12 @@ func Instance() *flamel {
 }
 
 func (fl *flamel) Run(application Application) {
+	fl.launchApp(application)
+	http.HandleFunc("/", fl.run)
+	appengine.Main()
+}
 
+func (fl *flamel) launchApp(application Application) {
 	if fl.app != nil {
 		panic("Application already set")
 	}
@@ -86,9 +91,6 @@ func (fl *flamel) Run(application Application) {
 	for _, s := range fl.services {
 		s.Initialize()
 	}
-
-	http.HandleFunc("/", fl.run)
-	appengine.Main()
 }
 
 func (fl *flamel) run(w http.ResponseWriter, req *http.Request) {

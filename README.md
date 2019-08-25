@@ -14,7 +14,7 @@ Flamel is 100% compatible with GAE go1.11 API
 - Fast and reliable (simple requests are responded to in less than 10000 ns)
 - Not invasive: its own packages are all optional, including the router, which means you can build your own system of top of flamel lifecycle:
 as an example, you can mix and match the model package with the official client libraries, or just use the latter.
-Mage is built on top of few interfaces: you can use the stock implementations or you can roll your own renderer, use your own router, build your own controller.
+Flamel is built on top of few interfaces: you can use the stock implementations or you can roll your own renderer, use your own router, build your own controller.
 - Squared and structured: the lifecycle and the basic interfaces the framework is composed of allow client code to be simple and well organized. The architecture of Flamel 
 incentives the use of stateless logic and helps in implementing proper http responses by not hiding the protocol logic.
 
@@ -172,7 +172,8 @@ and sending a GET request to `localhost:8080` will make your app output `Hello F
 
 ## Roadmap
 
-- Support for GAE go112 API by replacing Memcache and Search with Redis and Elastic on the GCP (or any other official solution Google will provide us with - Memcached API perhaps?).
+- Support for GAE go112 API by replacing Memcache and Search with Redis and Elastic on the GCP (or any other official solution Google will provide us with - Memorystore API perhaps?).
+- Static content caching, provided GCS and the above-mentioned KVP caching system
 - Rewriting of the `model` package using `unsafe` in place of `reflect`. This should be fun!
 
 Any help would be greatly appreciated. :)

@@ -35,12 +35,15 @@ type Config struct {
 	//true if the server suport Cross Origin Request
 	CORS                    *cors.Cors
 	EnforceHostnameRedirect string
+	MaxFileUploadSize       int64
 	Router
 }
 
 func DefaultConfig() Config {
 	config := Config{}
 	config.Router = NewDefaultRouter()
+	// default max size of upload is 4 megs
+	config.MaxFileUploadSize = (1 << 20) * 4
 	return config
 }
 
@@ -283,8 +286,12 @@ func (fl flamel) parseRequestInputs(ctx context.Context, req *http.Request) (con
 		fallthrough
 	case http.MethodPost:
 		reqType := req.Header.Get("Content-Type")
-		//parse the multiform data if the request specifies it as its content type
+		// parse the multiform data if the request specifies it as its content type
 		if strings.Contains(reqType, "multipart/form-data") {
+			if err := req.ParseMultipartForm(fl.MaxFileUploadSize); err != nil {
+				return ctx, err
+			}
+
 			// add the filehandles to the context
 			for k, v := range req.MultipartForm.File {
 				i := requestInput{}

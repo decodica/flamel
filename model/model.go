@@ -77,6 +77,11 @@ func (model Model) referenceAtIndex(idx int) *reference {
 	return nil
 }
 
+func (model Model) extensionNameAtIndex(idx int) string {
+	inmodel := model.encodedStruct.extensionsIdx[idx]
+	return reflect.TypeOf(model.modelable).Field(inmodel).Name
+}
+
 func IsEmpty(m modelable) bool {
 	model := m.getModel()
 	if !model.isRegistered() {
@@ -232,10 +237,22 @@ func index(m modelable) {
 		//we didn't map the structure earlier on. Map it now
 		model.structure.encodedStruct = newEncodedStruct(name)
 		mapStructure(mType, model.structure.encodedStruct)
-		// gob.Register(model.modelable)
 	}
 
 	hasAncestor := false
+
+	// register model extensions
+	for _, idx := range model.encodedStruct.extensionsIdx {
+		ef := obj.Field(idx)
+		if ef.IsNil() {
+			continue
+		}
+
+		et := ef.Elem().Type().Elem()
+		if _, ok := encodedStructs[et]; !ok {
+			mapStructure(et, newEncodedStruct(et.Name()))
+		}
+	}
 
 	if model.references == nil {
 
@@ -275,7 +292,6 @@ func index(m modelable) {
 		//if we already have references we update the modelable they point to
 	} else {
 		for i, ref := range model.references {
-			//ref := model.references[k]
 
 			// register the reference if not registered
 			// this can happen if a reference allows to be zeroed and the parent model has been read

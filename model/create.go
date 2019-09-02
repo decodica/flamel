@@ -103,7 +103,7 @@ func createWithOptions(ctx context.Context, m modelable, opts *CreateOptions) er
 	}
 
 	var newKey *datastore.Key
-	if opts.stringId == "" {
+	if opts.stringId != "" {
 		newKey = datastore.NameKey(model.structName, opts.stringId, ancKey)
 	} else {
 		newKey = datastore.IDKey(model.structName, opts.intId, ancKey)

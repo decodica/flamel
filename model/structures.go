@@ -52,6 +52,16 @@ func newEncodedStruct(name string) *encodedStruct {
 	return &encodedStruct{structName: name, fieldNames: mp, referencesIdx: ri, extensionsIdx: ei}
 }
 
+func (codec *encodedStruct) isReference(idx int) bool {
+	// for small number of elements, such as references of a struct, a linear search is quick enough
+	for _, v := range codec.referencesIdx {
+		if v  == idx {
+			return true
+		}
+	}
+	return false
+}
+
 //Keeps track of encoded structs according to their reflect.Type.
 //It is used as a cache to avoid to map structs that have been already mapped
 var encodedStructsMutex sync.Mutex
@@ -143,10 +153,10 @@ func mapStructureLocked(t reflect.Type, s *encodedStruct) {
 			//notifica a GAE che è uno slice usando property.multiple in save/load
 			//pensare a come rappresentare nella mappa uno slice.
 			//todo::if here, nested slice so not supported
-			fType = field.Type.Elem()
+			/*fType = field.Type.Elem()
 			if fType.Kind() != reflect.Struct {
 				break
-			}
+			}*/
 			fallthrough
 		case reflect.Ptr:
 			//if we have a pointer we map the value it points to
@@ -199,11 +209,13 @@ func mapStructureLocked(t reflect.Type, s *encodedStruct) {
 	gob.Register(obj)
 }
 
-func encodeStruct(name string, s interface{}, props *[]datastore.Property, multiple bool, codec *encodedStruct) error {
-	value := reflect.ValueOf(s).Elem()
+func encodeStruct(name string, value reflect.Value, props *[]datastore.Property, codec *encodedStruct) error {
+
 	sType := value.Type()
 
 	for i := 0; i < sType.NumField(); i++ {
+
+		p := datastore.Property{}
 		field := sType.Field(i)
 
 		if field.Type == typeOfModel {
@@ -218,64 +230,166 @@ func encodeStruct(name string, s interface{}, props *[]datastore.Property, multi
 			continue
 		}
 
-		v := value.FieldByName(field.Name)
-		p := &datastore.Property{}
+		tags := strings.Split(field.Tag.Get(tagDomain), ",")
 
-		if multiple {
+		if containsTag(tags, tagSkip) != "" {
+			continue
+		}
+
+		if containsTag(tags, tagNoindex) != "" {
 			p.NoIndex = true
 		}
 
+		// solve the reference if any is found
+		if codec.isReference(i) {
+			continue
+		}
+
+		v := value.Field(i)
+
 		p.Name = referenceName(name, field.Name)
-		switch x := v.Interface().(type) {
-		case time.Time:
-			p.Value = x
-		case datastore.GeoPoint:
-			p.Value = x
-		case []byte:
-			p.Value = x
-		default:
-			switch v.Kind() {
-			case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
-				p.Value = v.Int()
-			case reflect.Bool:
-				p.Value = v.Bool()
-			case reflect.String:
-				p.Value = v.String()
-			case reflect.Float32, reflect.Float64:
-				p.Value = v.Float()
-			case reflect.Slice:
-				if v.Type().Elem().Kind() != reflect.Uint8 {
-					if val, ok := codec.fieldNames[field.Name]; ok {
-						for j := 0; j < v.Len(); j++ {
-							if err := encodeStruct(val.childStruct.structName, v.Index(j).Addr().Interface(), props, true, val.childStruct); err != nil {
-								panic(err)
-							}
-						}
-						break
+
+		switch v.Kind() {
+		case reflect.Interface:
+			// if valid interface, treat it like an extension
+			if v.IsNil() {
+				return nil
+			}
+
+			if !isValidExtension(v) {
+				msg := fmt.Sprintf("only ptr to struct are admitted as interface types. %q type found at field %s", v.Elem().Type(), name)
+				panic(msg)
+			}
+
+			typ := v.Elem().Elem().Type()
+			es, ok := encodedStructs[typ]
+			if !ok {
+				msg := fmt.Sprintf("struct of type %q has not been mapped. Can't save interface %s", typ, name)
+				panic(msg)
+			}
+
+			p.Name = makeExtensionTypeName(p.Name)
+			p.Value = v.Elem().Type().Elem().Name()
+			*props = append(*props, p)
+
+			return encodeStruct(p.Name, v.Elem(), props, es)
+		case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+			p.Value = v.Int()
+		case reflect.Bool:
+			p.Value = v.Bool()
+		case reflect.String:
+			p.Value = v.String()
+		case reflect.Float32, reflect.Float64:
+			p.Value = v.Float()
+		case reflect.Slice:
+			if v.Type().Elem().Kind() == reflect.Uint8 {
+				p.Value = v.Bytes()
+			} else {
+				if val, ok := codec.fieldNames[p.Name]; ok {
+					if err := encodeSlice(val, props, v); err != nil {
+						return err
 					}
 				}
-				p.NoIndex = true
-				p.Value = v.Bytes()
-			case reflect.Struct:
+			}
+		case reflect.Ptr:
+			if isValidPointerType(v.Type().Elem()) {
+				if v.IsNil() {
+					p.Value = nil
+					*props = append(*props, p)
+					return nil
+				}
+				return encodeStruct(p.Name, v.Elem(), props, codec)
+			}
+			if v.Type().Elem().Kind() != reflect.Struct {
+				return fmt.Errorf("model: unsupported struct field type: %s", v.Type())
+			}
+			// we are dealing with a struct pointer
+			if v.IsNil() {
+				return nil
+			}
+			v = v.Elem()
+		case reflect.Struct:
+			switch x := v.Interface().(type) {
+			case time.Time:
+				p.Value = x
+			case datastore.GeoPoint:
+				p.Value = x
+			case []byte:
+				p.Value = x
+			case *datastore.Key:
+				p.Value = x
+			case datastore.PropertyLoadSaver:
+				eprops, err := x.Save()
+				if err != nil {
+					return err
+				}
+				*props = append(*props, eprops...)
+				return nil
+			default:
 				if !v.CanAddr() {
-					return fmt.Errorf("datastore: unsupported struct field %s for entity of type %s: value %v is unaddressable", p.Name, sType, v)
+					return fmt.Errorf("model: unsupported struct field %s for entity of type %s: value %v is unaddressable", p.Name, v.Type().Name(), v)
 				}
 
 				if val, ok := codec.fieldNames[p.Name]; ok {
 					if nil != val.childStruct {
-						if err := encodeStruct(val.childStruct.structName, v.Addr().Interface(), props, multiple, val.childStruct); err != nil {
-							panic(err)
+						var subProps []datastore.Property
+						if err := encodeStruct("", v, &subProps, val.childStruct); err != nil {
+							return err
 						}
-						continue
+						// key will always be nil, references are treated apart
+						p.Value = &datastore.Entity{
+							Key:        nil,
+							Properties: subProps,
+						}
 					}
 					return fmt.Errorf("struct %s is not a field of codec %+v", p.Name, codec)
 				}
 				//if struct, recursively call itself until an error is found
-				return fmt.Errorf("FieldName %s not found in %v for Entity of type %s", p.Name, codec.fieldNames, sType)
+				return fmt.Errorf("FieldName %s not found in %v for Entity of type %s", p.Name, codec.fieldNames, v.Type().Name())
 			}
 		}
-		*props = append(*props, *p)
+
+		*props = append(*props, p)
 	}
+
+	return nil
+}
+
+func encodeSlice(val encodedField, props *[]datastore.Property, v reflect.Value) error {
+
+	// create the sub struct and serialize it in slices of properties
+	var headProps []datastore.Property
+	if err := encodeStruct(val.childStruct.structName, v.Index(0), &headProps, val.childStruct); err != nil {
+		return err
+	}
+
+	values := make(map[string][]interface{}, len(headProps))
+	// map the values of the head into the map
+	for _, p := range headProps {
+		values[p.Name] = append(make([]interface{}, 0, v.Len()), p.Value)
+	}
+
+	// read the subsequent elements
+	for j := 1; j < v.Len(); j++ {
+		elemProps := make([]datastore.Property, 0, len(headProps))
+		if err := encodeStruct(val.childStruct.structName, v.Index(j), &elemProps, val.childStruct); err != nil {
+			return err
+		}
+		for _, p := range elemProps {
+			v, ok := values[p.Name]
+			if !ok {
+				return fmt.Errorf("model: unexpected property %q in element at index %d in slice", p.Name, j)
+			}
+			values[p.Name] = append(v, p.Value)
+		}
+	}
+
+	// add the final properties to the datastore bundle
+	for _, p := range headProps {
+		p.Value = values[p.Name]
+		*props = append(*props, p)
+	}
+
 	return nil
 }
 
@@ -536,165 +650,19 @@ func toPropertyList(modelable modelable) ([]datastore.Property, error) {
 	model := modelable.getModel()
 
 	var props []datastore.Property
-	//loop through prototype fields
-	//and handle them accordingly to their type
-	for i := 0; i < sType.NumField(); i++ {
-		field := sType.Field(i)
 
-		if field.Type == typeOfModel {
-			continue
-		}
-
-		if field.Tag.Get("datastore") == "-" {
-			continue
-		}
-
-		tags := strings.Split(field.Tag.Get(tagDomain), ",")
-
-		if containsTag(tags, tagSkip) != "" {
-			continue
-		}
-
+	for _, ref := range model.references {
 		p := datastore.Property{}
-
-		if containsTag(tags, tagNoindex) != "" {
-			p.NoIndex = true
-		}
-
-		p.Name = field.Name
-
-		if ref := model.referenceAtIndex(i); ref != nil {
-			rm := ref.Modelable.getModel()
-			p.Value = rm.Key
-			props = append(props, p)
-			continue
-		}
-		v := value.Field(i)
-		switch x := v.Interface().(type) {
-		case time.Time:
-			p.Value = x
-		case datastore.GeoPoint:
-			p.Value = x
-		case []byte:
-			p.Value = x
-		case *datastore.Key:
-			p.Value = x
-		case datastore.PropertyLoadSaver:
-			eprops, err := x.Save()
-			if err != nil {
-				return nil, err
-			}
-			props = append(props, eprops...)
-			continue
-		default:
-			switch v.Kind() {
-			case reflect.Interface:
-				// if valid interface, treat it like an extension
-				if v.IsNil() {
-					continue
-				}
-
-				if !isValidExtension(v) {
-					msg := fmt.Sprintf("only ptr to struct are admitted as interface types. %q type found at index %d", v.Elem().Type(), i)
-					panic(msg)
-				}
-
-				typ := v.Elem().Elem().Type()
-				es, ok := encodedStructs[typ]
-				if !ok {
-					msg := fmt.Sprintf("struct of type %q has not been mapped. Can't save interface at index %d", typ, i)
-					panic(msg)
-				}
-
-				p.Name = makeExtensionTypeName(p.Name)
-				p.Value = v.Elem().Type().Elem().Name()
-				props = append(props, p)
-
-				err := encodeStruct(field.Name, v.Elem().Interface(), &props, false, es)
-				if err != nil {
-					panic(err)
-				}
-				continue
-			case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
-				p.Value = v.Int()
-			case reflect.Bool:
-				p.Value = v.Bool()
-			case reflect.String:
-				p.Value = v.String()
-			case reflect.Float32, reflect.Float64:
-				p.Value = v.Float()
-			case reflect.Slice:
-				sliceKind := v.Type().Elem().Kind()
-				if sliceKind != reflect.Uint8 {
-
-					if val, ok := model.fieldNames[p.Name]; ok {
-						if sliceKind == reflect.Struct {
-							for j := 0; j < v.Len(); j++ {
-								//if the slice is made of structs we encode them
-
-								if err := encodeStruct(val.childStruct.structName, v.Index(j).Addr().Interface(), &props, true, val.childStruct); err != nil {
-									panic(err)
-								}
-							}
-							continue
-						}
-
-						//todo: improve code
-						for j := 0; j < v.Len(); j++ {
-							sp := datastore.Property{}
-							sp.Name = p.Name
-							sp.NoIndex = true
-							//get the element at address j
-							sv := v.Index(j).Addr().Elem()
-							switch svi := sv.Interface().(type) {
-							case time.Time:
-								sp.Value = svi
-							case datastore.GeoPoint:
-								sp.Value = svi
-							case []byte:
-								sp.Value = svi
-							case *datastore.Key:
-								sp.Value = svi
-							default:
-								switch sv.Kind() {
-								case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
-									sp.Value = sv.Int()
-								case reflect.Bool:
-									sp.Value = sv.Bool()
-								case reflect.String:
-									sp.Value = sv.String()
-								case reflect.Float32, reflect.Float64:
-									sp.Value = sv.Float()
-								}
-							}
-
-							props = append(props, sp)
-						}
-						continue
-					}
-				}
-
-				p.NoIndex = true
-				p.Value = v.Bytes()
-			case reflect.Struct:
-				if !v.CanAddr() {
-					return nil, fmt.Errorf("datastore: unsupported struct field %s: value is unaddressable", field.Name)
-				}
-				//if struct, recursively call itself until an error is found
-				//as debug, check consistency. we should have a value at i
-				if val, ok := model.fieldNames[p.Name]; ok {
-					err := encodeStruct(val.childStruct.structName, v.Addr().Interface(), &props, false, val.childStruct)
-					if err != nil {
-						panic(err)
-					}
-					continue
-				}
-				return nil, fmt.Errorf("FieldName %s not found in %v for Entity of type %s", p.Name, model.fieldNames, sType)
-			}
-		}
-
+		rm := ref.Modelable.getModel()
+		p.Name = sType.Field(ref.idx).Name
+		p.Value = rm.Key
 		props = append(props, p)
 	}
+
+	if err := encodeStruct("", value, &props, model.encodedStruct); err != nil {
+			return nil, err
+	}
+
 	return props, nil
 }
 
@@ -778,4 +746,23 @@ func findExtensionType(ext string, props []datastore.Property) reflect.Type {
 		}
 	}
 	return nil
+}
+
+
+// isValidPointerType is taken from the official GCP Datastore Client Library (datastore v3)
+func isValidPointerType(t reflect.Type) bool {
+	if t == typeOfTime || t == typeOfGeoPoint {
+		return true
+	}
+	switch t.Kind() {
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		return true
+	case reflect.Bool:
+		return true
+	case reflect.String:
+		return true
+	case reflect.Float32, reflect.Float64:
+		return true
+	}
+	return false
 }

@@ -69,10 +69,8 @@ func (model *Model) setModel(m Model) {
 
 func (model Model) referenceAtIndex(idx int) *reference {
 	// for small number of elements, such as references of a struct, a linear search is quick enough
-	for _, v := range model.references {
-		if v.idx == idx {
-			return &v
-		}
+	if model.isReference(idx) {
+		return &model.references[idx]
 	}
 	return nil
 }

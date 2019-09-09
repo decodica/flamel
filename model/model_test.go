@@ -1,6 +1,7 @@
 package model
 
 import (
+	"cloud.google.com/go/datastore"
 	"fmt"
 	"google.golang.org/appengine/log"
 	"google.golang.org/appengine/memcache"
@@ -16,6 +17,21 @@ type Entity struct {
 	EmptyChild    EmptyChild `model:"zero"`
 	ReadonlyChild `model:"readonly"`
 	Nomo          NoModel
+}
+
+type Multiple struct {
+	Num int
+	Attributes []Attribute
+}
+
+type MultipleModel struct {
+	Model
+	Attributes []Attribute
+}
+
+type Attribute struct {
+	Name string
+	Value string
 }
 
 type Child struct {
@@ -41,6 +57,106 @@ type ReadonlyChild struct {
 
 type NoModel struct {
 	Name string
+}
+
+func TestMultiple(t *testing.T) {
+	done, ctx := newContextWithStartupTime(t, 60)
+	defer done()
+
+	service := Service{}
+	service.Initialize()
+
+	ctx = service.OnStart(ctx)
+	defer service.OnEnd(ctx)
+
+	resetDatastoreEmulator(t)
+
+	// create the entity
+	m := Multiple{}
+	m.Num = 1
+	m.Attributes = make([]Attribute, 0)
+	m.Attributes = append(m.Attributes, Attribute{"Color", "Red"})
+	m.Attributes = append(m.Attributes, Attribute{"Color", "Blue"})
+
+	if len(m.Attributes) != 2 {
+		t.Fatalf("attributes are supposed to be 2. Found %d", len(m.Attributes))
+	}
+
+	client := ctx.Value(keyDatastoreClient).(*datastore.Client)
+
+	newKey := datastore.IncompleteKey("Multiple", nil)
+	if _, err := client.Put(ctx, newKey, &m); err != nil {
+		t.Fatalf("Unable to create Multiple entity: %s", err.Error())
+	}
+
+	q := datastore.NewQuery("Multiple")
+	q = q.Filter("Attributes.Value =", "Red")
+	q = q.Filter("Attributes.Value =", "Blue")
+	res := make([]Multiple, 0, 0)
+	if _, err := client.GetAll(ctx, q, &res); err != nil {
+		t.Fatalf("error retrieving multiple: %s", err.Error())
+	}
+
+	hasValue := false
+	for _, v := range res {
+		for _, a := range v.Attributes {
+			if a.Value == "Red" {
+				hasValue = true
+				break
+			}
+		}
+	}
+
+	if !hasValue {
+		t.Fatalf("Multiple has no attribute with value red. %+v", &res)
+	}
+}
+
+func TestMultipleModel(t *testing.T) {
+	done, ctx := newContextWithStartupTime(t, 60)
+	defer done()
+
+	service := Service{}
+	service.Initialize()
+
+	ctx = service.OnStart(ctx)
+	defer service.OnEnd(ctx)
+
+	resetDatastoreEmulator(t)
+
+	// create the entity
+	m := MultipleModel{}
+	m.Attributes = make([]Attribute, 0)
+	m.Attributes = append(m.Attributes, Attribute{"Color", "Red"})
+	m.Attributes = append(m.Attributes, Attribute{"Color", "Blue"})
+
+	if len(m.Attributes) != 2 {
+		t.Fatalf("attributes are supposed to be 2. Found %d", len(m.Attributes))
+	}
+
+	if err := Create(ctx, &m); err != nil {
+		t.Fatalf("Unable to create Multiple entity: %s", err.Error())
+	}
+
+	q := NewQuery((*MultipleModel)(nil))
+	q.WithField("Attributes =", "red")
+
+	res := MultipleModel{}
+	if err := q.First(ctx, &res); err != nil {
+		t.Fatalf("error retrieving multiple: %s", err.Error())
+	}
+
+	hasValue := false
+	for _, v := range res.Attributes {
+		if v.Value == "Red" {
+			hasValue = true
+			break
+		}
+	}
+
+	if !hasValue {
+		t.Fatalf("Multiple has no attribute with value red. %+v", &res)
+	}
 }
 
 func TestCreateEmpty(t *testing.T) {

@@ -80,8 +80,15 @@ func Instance() *flamel {
 
 func (fl *flamel) Run(application Application) {
 	fl.launchApp(application)
+	defer fl.end()
 	http.HandleFunc("/", fl.run)
 	appengine.Main()
+}
+
+func (fl *flamel) end() {
+	for _, s := range fl.services {
+		s.Destroy()
+	}
 }
 
 func (fl *flamel) launchApp(application Application) {

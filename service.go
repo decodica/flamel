@@ -10,4 +10,6 @@ type Service interface {
 	OnStart(ctx context.Context) context.Context
 	// called once the request has been processed
 	OnEnd(ctx context.Context)
+	// called once the main function returns. The service should implement its destruction code here.
+	Destroy()
 }

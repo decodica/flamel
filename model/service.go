@@ -42,3 +42,6 @@ func (service *Service) OnEnd(ctx context.Context) {
 		panic(fmt.Errorf("unable to close datastore client: %s", err.Error()))
 	}
 }
+
+
+func (service *Service) Destroy() {}

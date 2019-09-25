@@ -280,12 +280,9 @@ func (fl flamel) parseRequestInputs(ctx context.Context, req *http.Request) (con
 	case http.MethodDelete:
 		fallthrough
 	case http.MethodGet:
-		for k := range req.URL.Query() {
-			s := make([]string, 1, 1)
-			v := req.URL.Query().Get(k)
-			s[0] = v
+		for k, v := range req.URL.Query() {
 			i := requestInput{}
-			i.values = s
+			i.values = v
 			reqValues[k] = i
 		}
 		break

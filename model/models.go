@@ -85,7 +85,7 @@ func readMulti(ctx context.Context, dst interface{}) error {
 	di := destination.Interface()
 	// we retrieved everything from memcache, no need to call datastore
 	if len(keys) > 0 {
-		client := client(ctx)
+		client := ClientFromContext(ctx)
 		err := client.GetMulti(ctx, keys, di)
 
 		if err != nil {

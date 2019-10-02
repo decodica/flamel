@@ -11,7 +11,7 @@ import (
 // recursively deletes a modelable and all its references
 func Clear(ctx context.Context, m modelable) (err error) {
 
-	client := client(ctx)
+	client := ClientFromContext(ctx)
 	opts := datastore.MaxAttempts(1)
 	_, err = client.RunInTransaction(ctx, func(tx *datastore.Transaction) error {
 		return clear(ctx, m)
@@ -45,7 +45,7 @@ func clear(ctx context.Context, m modelable) (err error) {
 			return err
 		}
 	}
-	client := client(ctx)
+	client := ClientFromContext(ctx)
 	err = client.Delete(ctx, model.Key)
 
 	return err
@@ -59,7 +59,7 @@ func Delete(ctx context.Context, ref modelable, parent modelable) (err error) {
 		return fmt.Errorf("reference %s has a nil key", child.Name())
 	}
 
-	client := client(ctx)
+	client := ClientFromContext(ctx)
 	err = client.Delete(ctx, child.Key)
 	if err == nil {
 

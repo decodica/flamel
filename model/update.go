@@ -26,7 +26,7 @@ func UpdateInTransaction(ctx context.Context, m modelable, opts *UpdateOptions) 
 	index(m)
 
 	to := datastore.MaxAttempts(opts.attempts)
-	client := client(ctx)
+	client := ClientFromContext(ctx)
 	_, err = client.RunInTransaction(ctx, func(tx *datastore.Transaction) error {
 		return update(ctx, m)
 	}, to)
@@ -99,7 +99,7 @@ func updateReference(ctx context.Context, ref *reference, key *datastore.Key) (e
 		model.references[i] = r
 	}
 
-	client := client(ctx)
+	client := ClientFromContext(ctx)
 	_, err = client.Put(ctx, key, ref.Modelable)
 
 	if err != nil {
@@ -151,7 +151,7 @@ func update(ctx context.Context, m modelable) error {
 		model.references[i] = ref
 	}
 
-	client := client(ctx)
+	client := ClientFromContext(ctx)
 	key, err := client.Put(ctx, model.Key, m)
 
 	if err != nil {

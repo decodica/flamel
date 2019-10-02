@@ -14,7 +14,7 @@ type Service struct {
 	project string
 }
 
-func client(ctx context.Context) *datastore.Client {
+func ClientFromContext(ctx context.Context) *datastore.Client {
 	return ctx.Value(keyDatastoreClient).(*datastore.Client)
 }
 

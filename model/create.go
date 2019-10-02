@@ -36,7 +36,7 @@ func CreateWithOptions(ctx context.Context, m modelable, copts *CreateOptions) e
 
 	var err error
 	if copts.attempts > 0 {
-		client := client(ctx)
+		client := ClientFromContext(ctx)
 		opts := datastore.MaxAttempts(copts.attempts)
 
 		_, err = client.RunInTransaction(ctx, func(tx *datastore.Transaction) error {
@@ -109,7 +109,7 @@ func createWithOptions(ctx context.Context, m modelable, opts *CreateOptions) er
 		newKey = datastore.IDKey(model.structName, opts.intId, ancKey)
 	}
 
-	client := client(ctx)
+	client := ClientFromContext(ctx)
 	key, err := client.Put(ctx, newKey, m)
 	if err != nil {
 		return err

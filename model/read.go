@@ -47,7 +47,7 @@ func ReadInTransaction(ctx context.Context, m modelable, opts *ReadOptions) (err
 
 	to := datastore.MaxAttempts(opts.attempts)
 	// else we ignore the memcache result and we read from datastore
-	client := client(ctx)
+	client := ClientFromContext(ctx)
 	_, err = client.RunInTransaction(ctx, func(tx *datastore.Transaction) error {
 		return read(ctx, m)
 	}, to, datastore.ReadOnly)
@@ -67,7 +67,7 @@ func read(ctx context.Context, m modelable) error {
 		return nil
 	}
 
-	client := client(ctx)
+	client := ClientFromContext(ctx)
 	err := client.Get(ctx, model.Key, m)
 
 	if err != nil {

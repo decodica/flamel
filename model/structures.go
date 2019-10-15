@@ -5,7 +5,6 @@ import (
 	"encoding/gob"
 	"errors"
 	"fmt"
-	"google.golang.org/appengine"
 	"reflect"
 	"strings"
 	"sync"
@@ -364,7 +363,7 @@ func decodeStruct(s reflect.Value, p datastore.Property, encodedField encodedFie
 			}
 			field.Set(reflect.ValueOf(x))
 		case typeOfGeoPoint:
-			x, ok := p.Value.(appengine.GeoPoint)
+			x, ok := p.Value.(datastore.GeoPoint)
 			if !ok && p.Value != nil {
 				return errors.New("error - invalid geoPoint type")
 			}

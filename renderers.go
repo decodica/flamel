@@ -3,6 +3,7 @@ package flamel
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"google.golang.org/appengine"
 	"google.golang.org/appengine/blobstore"
 	"html/template"
@@ -34,6 +35,7 @@ type JSONRenderer struct {
 }
 
 func (renderer *JSONRenderer) Render(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json; charset=UTF-8")
 	return json.NewEncoder(w).Encode(renderer.Data)
 }
 
@@ -63,5 +65,23 @@ type ErrorRenderer struct {
 
 func (renderer *ErrorRenderer) Render(w http.ResponseWriter) error {
 	_, err := io.WriteString(w, renderer.Data.Error())
+	return err
+}
+
+type DownloadRenderer struct {
+	Mime string
+	Encoding string
+	FileName string
+	Data []byte
+}
+
+func (renderer *DownloadRenderer) Render(w http.ResponseWriter) error {
+	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", renderer.FileName))
+	if renderer.Mime == "" {
+		w.Header().Set("Content-Type", "application/octet-stream; charset=UTF-8")
+	} else {
+		w.Header().Set("Content-Type", fmt.Sprintf("%s; charset=%s", renderer.Mime, renderer.Encoding))
+	}
+	_, err := w.Write(renderer.Data)
 	return err
 }

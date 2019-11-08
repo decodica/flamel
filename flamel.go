@@ -18,6 +18,7 @@ type flamel struct {
 	app        Application
 	bufferPool *sync.Pool
 	services   []Service
+	contentOfferer ContentOfferer
 }
 
 type Application interface {
@@ -36,6 +37,7 @@ type Config struct {
 	CORS                    *cors.Cors
 	EnforceHostnameRedirect string
 	MaxFileUploadSize       int64
+	ContentOfferer ContentOfferer
 	Router
 }
 
@@ -44,6 +46,7 @@ func DefaultConfig() Config {
 	config.Router = NewDefaultRouter()
 	// default max size of upload is 4 megs
 	config.MaxFileUploadSize = (1 << 20) * 4
+	config.ContentOfferer = defaultContentOfferer{}
 	return config
 }
 
@@ -56,6 +59,7 @@ const (
 	KeyRequestURL    = "__flamel_URL__"
 	KeyRequestScheme = "__flamel_scheme__"
 	KeyRequestQuery  = "__flamel_query__"
+	KeyNegotiatedContent = "__flamel_negotiated_content__"
 )
 
 var instance *flamel
@@ -72,7 +76,7 @@ func Instance() *flamel {
 				return bytes.Buffer{}
 			},
 		}
-		instance = &flamel{Config: config, bufferPool: &pool}
+		instance = &flamel{Config: config, bufferPool: &pool, contentOfferer: config.ContentOfferer}
 	})
 
 	return instance
@@ -149,7 +153,8 @@ func (fl *flamel) run(w http.ResponseWriter, req *http.Request) {
 	}
 
 	//add inputs to the context object
-	ctx, err := fl.parseRequestInputs(ctx, req)
+	ins, err := fl.parseRequestInputs(ctx, req)
+	ctx = context.WithValue(ctx, KeyRequestInputs, ins)
 	if err != nil {
 		renderer := TextRenderer{}
 		renderer.Data = err.Error()
@@ -177,6 +182,17 @@ func (fl *flamel) run(w http.ResponseWriter, req *http.Request) {
 	}
 
 	defer fl.destroy(ctx, controller)
+
+	// negotiated content
+	cnt := requestInput{}
+	if offerer, ok := controller.(ContentOfferer); ok {
+		cnt.values = []string {fl.negotiatedContent(req, offerer)}
+	} else {
+		cnt.values = []string {fl.negotiatedContent(req, fl.contentOfferer)}
+	}
+
+	ins[KeyNegotiatedContent] = cnt
+
 	out := newResponseOutput()
 
 	//handle the CORS framework
@@ -252,7 +268,7 @@ func (fl *flamel) destroy(ctx context.Context, controller Controller) {
 	fl.app.AfterResponse(ctx)
 }
 
-func (fl flamel) parseRequestInputs(ctx context.Context, req *http.Request) (context.Context, error) {
+func (fl flamel) parseRequestInputs(ctx context.Context, req *http.Request) (RequestInputs, error) {
 	reqValues := make(RequestInputs)
 
 	reqValues[KeyRequestScheme] = requestInput{
@@ -293,7 +309,7 @@ func (fl flamel) parseRequestInputs(ctx context.Context, req *http.Request) (con
 		// parse the multiform data if the request specifies it as its content type
 		if strings.Contains(reqType, "multipart/form-data") {
 			if err := req.ParseMultipartForm(fl.MaxFileUploadSize); err != nil {
-				return ctx, err
+				return nil, err
 			}
 
 			// add the filehandles to the context
@@ -305,7 +321,7 @@ func (fl flamel) parseRequestInputs(ctx context.Context, req *http.Request) (con
 		} else {
 			err := req.ParseForm()
 			if err != nil {
-				return ctx, err
+				return nil, err
 			}
 		}
 
@@ -345,5 +361,5 @@ func (fl flamel) parseRequestInputs(ctx context.Context, req *http.Request) (con
 		reqValues[c.Name] = i
 	}
 
-	return context.WithValue(ctx, KeyRequestInputs, reqValues), nil
+	return reqValues, nil
 }

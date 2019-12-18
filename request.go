@@ -1,11 +1,14 @@
 package flamel
 
 import (
+	"fmt"
 	"mime/multipart"
 	"net/http"
+	"strconv"
 	"time"
 )
 
+// inputs related definitions and methods
 type RequestInputs map[string]requestInput
 
 type requestInput struct {
@@ -38,14 +41,73 @@ func (req requestInput) Files() []*multipart.FileHeader {
 	return req.files
 }
 
+type MissingInputError struct {
+	key string
+}
+
+func (e MissingInputError) Error() string {
+	return fmt.Sprintf("missing input for key %s", e.key)
+}
+
+// convenience methods to read inputs
+
+func (ins RequestInputs) MustIntWithFormat(key string, base int, size int) (int64, error) {
+	val, ok := ins[key]
+	if !ok {
+		return 0, MissingInputError{key:key}
+	}
+	return strconv.ParseInt(val.Value(), base, size)
+}
+
+func (ins RequestInputs) MustInt(key string) (int64, error) {
+	return ins.MustIntWithFormat(key, 10, 64)
+}
+
+func (ins RequestInputs) MustUintWithFormat(key string, base int, size int) (uint64, error) {
+	val, ok := ins[key]
+	if !ok {
+		return 0, MissingInputError{key:key}
+	}
+	return strconv.ParseUint(val.Value(), base, size)
+}
+
+func (ins RequestInputs) MustUint(key string) (uint64, error) {
+	return ins.MustUintWithFormat(key, 10, 64)
+}
+
+func (ins RequestInputs) MustFloatWithFormat(key string, size int) (float64, error) {
+	val, ok := ins[key]
+	if !ok {
+		return 0.0, MissingInputError{key:key}
+	}
+	return strconv.ParseFloat(val.Value(), size)
+}
+
+func (ins RequestInputs) MustFloat(key string) (float64, error) {
+	return ins.MustFloatWithFormat(key, 64)
+}
+
+func (ins RequestInputs) Has(key string) bool {
+	 _, ok := ins[key]
+	 return ok
+}
+
+func (ins RequestInputs) MustString(key string) (string, error) {
+	_, ok := ins[key]
+	if !ok {
+		return "", MissingInputError{key:key}
+	}
+	return ins[key].Value(), nil
+}
+
+// generic response
+
 type HttpResponse struct {
 	Status   int
 	Location string
 }
 
-type Renderer interface {
-	Render(w http.ResponseWriter) error
-}
+// output response
 
 type ResponseOutput struct {
 	cookies  []*http.Cookie

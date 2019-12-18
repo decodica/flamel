@@ -11,6 +11,10 @@ import (
 	"net/http"
 )
 
+type Renderer interface {
+	Render(w http.ResponseWriter) error
+}
+
 // Renders a GO HTML template
 type TemplateRenderer struct {
 	Template     *template.Template

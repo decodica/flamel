@@ -59,6 +59,7 @@ const (
 	KeyRequestURL    = "__flamel_URL__"
 	KeyRequestScheme = "__flamel_scheme__"
 	KeyRequestQuery  = "__flamel_query__"
+	KeyRequestHost = "__flamel_host__"
 	KeyNegotiatedContent = "__flamel_negotiated_content__"
 )
 
@@ -270,6 +271,10 @@ func (fl *flamel) destroy(ctx context.Context, controller Controller) {
 
 func (fl flamel) parseRequestInputs(ctx context.Context, req *http.Request) (RequestInputs, error) {
 	reqValues := make(RequestInputs)
+
+	reqValues[KeyRequestHost] = requestInput{
+		values: []string{req.URL.Host},
+	}
 
 	reqValues[KeyRequestScheme] = requestInput{
 		values: []string{req.URL.Scheme},

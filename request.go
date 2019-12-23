@@ -92,12 +92,20 @@ func (ins RequestInputs) Has(key string) bool {
 	 return ok
 }
 
-func (ins RequestInputs) MustString(key string) (string, error) {
+func (ins RequestInputs) GetString(key string) (string, error) {
 	_, ok := ins[key]
 	if !ok {
 		return "", MissingInputError{key:key}
 	}
 	return ins[key].Value(), nil
+}
+
+func (ins RequestInputs) MustString(key string) string {
+	s, err := ins.GetString(key)
+	if err != nil {
+		panic(err)
+	}
+	return s
 }
 
 // generic response
@@ -128,6 +136,21 @@ func (out *ResponseOutput) AddHeader(key string, value string) {
 
 func (out *ResponseOutput) AddCookie(cookie http.Cookie) {
 	out.cookies = append(out.cookies, &cookie)
+}
+
+func (out *ResponseOutput) SetCookie(cookie http.Cookie) {
+	idx := -1
+	for i, v := range out.cookies {
+		if v.Name == cookie.Name {
+			idx = i
+			break
+		}
+	}
+	if idx == -1 {
+		out.AddCookie(cookie)
+		return
+	}
+	out.cookies[idx] = &cookie
 }
 
 func (out *ResponseOutput) RemoveCookie(name string) {

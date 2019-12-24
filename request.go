@@ -51,7 +51,7 @@ func (e MissingInputError) Error() string {
 
 // convenience methods to read inputs
 
-func (ins RequestInputs) MustIntWithFormat(key string, base int, size int) (int64, error) {
+func (ins RequestInputs) GetIntWithFormat(key string, base int, size int) (int64, error) {
 	val, ok := ins[key]
 	if !ok {
 		return 0, MissingInputError{key:key}
@@ -59,11 +59,21 @@ func (ins RequestInputs) MustIntWithFormat(key string, base int, size int) (int6
 	return strconv.ParseInt(val.Value(), base, size)
 }
 
-func (ins RequestInputs) MustInt(key string) (int64, error) {
-	return ins.MustIntWithFormat(key, 10, 64)
+func (ins RequestInputs) GetInt(key string) (int64, error) {
+	return ins.GetIntWithFormat(key, 10, 64)
 }
 
-func (ins RequestInputs) MustUintWithFormat(key string, base int, size int) (uint64, error) {
+func (ins RequestInputs) MustInt(key string) int64 {
+	i, err := ins.GetInt(key)
+	if err != nil {
+		panic(err)
+	}
+	return i
+}
+
+
+// Uint related methods
+func (ins RequestInputs) GetUintWithFormat(key string, base int, size int) (uint64, error) {
 	val, ok := ins[key]
 	if !ok {
 		return 0, MissingInputError{key:key}
@@ -71,11 +81,21 @@ func (ins RequestInputs) MustUintWithFormat(key string, base int, size int) (uin
 	return strconv.ParseUint(val.Value(), base, size)
 }
 
-func (ins RequestInputs) MustUint(key string) (uint64, error) {
-	return ins.MustUintWithFormat(key, 10, 64)
+func (ins RequestInputs) GetUint(key string) (uint64, error) {
+	return ins.GetUintWithFormat(key, 10, 64)
 }
 
-func (ins RequestInputs) MustFloatWithFormat(key string, size int) (float64, error) {
+func (ins RequestInputs) MustUint(key string) uint64 {
+	u, err := ins.GetUint(key)
+	if err != nil {
+		panic(err)
+	}
+	return u
+}
+
+
+// float related methods
+func (ins RequestInputs) GetFloatWithFormat(key string, size int) (float64, error) {
 	val, ok := ins[key]
 	if !ok {
 		return 0.0, MissingInputError{key:key}
@@ -83,9 +103,18 @@ func (ins RequestInputs) MustFloatWithFormat(key string, size int) (float64, err
 	return strconv.ParseFloat(val.Value(), size)
 }
 
-func (ins RequestInputs) MustFloat(key string) (float64, error) {
-	return ins.MustFloatWithFormat(key, 64)
+func (ins RequestInputs) GetFloat(key string) (float64, error) {
+	return ins.GetFloatWithFormat(key, 64)
 }
+
+func (ins RequestInputs) MustFloat(key string) float64 {
+	f, err := ins.GetFloat(key)
+	if err != nil {
+		panic(err)
+	}
+	return f
+}
+
 
 func (ins RequestInputs) Has(key string) bool {
 	 _, ok := ins[key]

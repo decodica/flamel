@@ -37,7 +37,7 @@ func buildChars() {
 		}
 
 		// a token is defined as a character that is not a control character nor a separator
-		if isChar && !isCtl &&  !isSeparator {
+		if isChar && !isCtl && !isSeparator {
 			v |= isToken
 		}
 		chars[c] = v
@@ -52,7 +52,7 @@ func extractAcceptToken(s string) (string, string) {
 	for ; i < len(s); i++ {
 		v := s[i]
 		// we have a valid token if we have tokens including the slash character
-		if chars[v] & isToken == 0 && v != '/' {
+		if chars[v]&isToken == 0 && v != '/' {
 			break
 		}
 	}
@@ -63,7 +63,7 @@ func extractAcceptToken(s string) (string, string) {
 func skipSpace(s string) string {
 	for i := 0; i < len(s); i++ {
 		v := s[i]
-		if chars[v] & isSpace == 0 {
+		if chars[v]&isSpace == 0 {
 			return s[i:]
 		}
 	}
@@ -98,7 +98,7 @@ func extractQuality(s string) (float64, string) {
 
 type contentSpecification struct {
 	Quality float64
-	Value string
+	Value   string
 }
 
 // parses the "Accept" header value. e.g: "text/html, application/xhtml+xml, application/xml;q=0.9, image/webp, */*;q=0.8"
@@ -142,5 +142,3 @@ func parseAcceptFormat(values []string) []contentSpecification {
 
 	return specs
 }
-
-

@@ -10,7 +10,7 @@ type ContentOfferer interface {
 	Offers() []string
 }
 
-type defaultContentOfferer struct {}
+type defaultContentOfferer struct{}
 
 func (co defaultContentOfferer) DefaultOffer() string {
 	return "text/html"
@@ -43,7 +43,7 @@ func (f flamel) negotiatedContent(r *http.Request, offerer ContentOfferer) strin
 					}
 				case strings.HasSuffix(spec.Value, "/*"):
 					// check if the
-					if spec.Quality > maxQ && wcLevel <= 2 && strings.HasPrefix(offer, spec.Value[:len(spec.Value) - 2]) {
+					if spec.Quality > maxQ && wcLevel <= 2 && strings.HasPrefix(offer, spec.Value[:len(spec.Value)-2]) {
 						maxQ = spec.Quality
 						best = offer
 						wcLevel = 2

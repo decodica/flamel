@@ -54,8 +54,6 @@ func TestCreateEmpty(t *testing.T) {
 	ctx = service.OnStart(ctx)
 	defer service.OnEnd(ctx)
 
-	resetDatastoreEmulator(t)
-
 	// test correct indexing
 	entity := Entity{}
 	index(&entity)

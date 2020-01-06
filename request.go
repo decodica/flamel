@@ -54,7 +54,7 @@ func (e MissingInputError) Error() string {
 func (ins RequestInputs) GetIntWithFormat(key string, base int, size int) (int64, error) {
 	val, ok := ins[key]
 	if !ok {
-		return 0, MissingInputError{key:key}
+		return 0, MissingInputError{key: key}
 	}
 	return strconv.ParseInt(val.Value(), base, size)
 }
@@ -71,12 +71,11 @@ func (ins RequestInputs) MustInt(key string) int64 {
 	return i
 }
 
-
 // Uint related methods
 func (ins RequestInputs) GetUintWithFormat(key string, base int, size int) (uint64, error) {
 	val, ok := ins[key]
 	if !ok {
-		return 0, MissingInputError{key:key}
+		return 0, MissingInputError{key: key}
 	}
 	return strconv.ParseUint(val.Value(), base, size)
 }
@@ -93,12 +92,11 @@ func (ins RequestInputs) MustUint(key string) uint64 {
 	return u
 }
 
-
 // float related methods
 func (ins RequestInputs) GetFloatWithFormat(key string, size int) (float64, error) {
 	val, ok := ins[key]
 	if !ok {
-		return 0.0, MissingInputError{key:key}
+		return 0.0, MissingInputError{key: key}
 	}
 	return strconv.ParseFloat(val.Value(), size)
 }
@@ -115,16 +113,15 @@ func (ins RequestInputs) MustFloat(key string) float64 {
 	return f
 }
 
-
 func (ins RequestInputs) Has(key string) bool {
-	 _, ok := ins[key]
-	 return ok
+	_, ok := ins[key]
+	return ok
 }
 
 func (ins RequestInputs) GetString(key string) (string, error) {
 	_, ok := ins[key]
 	if !ok {
-		return "", MissingInputError{key:key}
+		return "", MissingInputError{key: key}
 	}
 	return ins[key].Value(), nil
 }

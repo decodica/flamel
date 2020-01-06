@@ -15,9 +15,9 @@ import (
 
 type flamel struct {
 	Config
-	app        Application
-	bufferPool *sync.Pool
-	services   []Service
+	app            Application
+	bufferPool     *sync.Pool
+	services       []Service
 	contentOfferer ContentOfferer
 }
 
@@ -37,7 +37,7 @@ type Config struct {
 	CORS                    *cors.Cors
 	EnforceHostnameRedirect string
 	MaxFileUploadSize       int64
-	ContentOfferer ContentOfferer
+	ContentOfferer          ContentOfferer
 	Router
 }
 
@@ -52,14 +52,14 @@ func DefaultConfig() Config {
 
 const (
 	//request related special vars
-	KeyRequestInputs = "__flamel_request_inputs__"
-	KeyRequestMethod = "__flamel__method__"
-	KeyRequestIPV4   = "__flamel_remote_address__"
-	KeyRequestJSON   = "__flamel_json__"
-	KeyRequestURL    = "__flamel_URL__"
-	KeyRequestScheme = "__flamel_scheme__"
-	KeyRequestQuery  = "__flamel_query__"
-	KeyRequestHost = "__flamel_host__"
+	KeyRequestInputs     = "__flamel_request_inputs__"
+	KeyRequestMethod     = "__flamel__method__"
+	KeyRequestIPV4       = "__flamel_remote_address__"
+	KeyRequestJSON       = "__flamel_json__"
+	KeyRequestURL        = "__flamel_URL__"
+	KeyRequestScheme     = "__flamel_scheme__"
+	KeyRequestQuery      = "__flamel_query__"
+	KeyRequestHost       = "__flamel_host__"
 	KeyNegotiatedContent = "__flamel_negotiated_content__"
 )
 
@@ -187,9 +187,9 @@ func (fl *flamel) run(w http.ResponseWriter, req *http.Request) {
 	// negotiated content
 	cnt := requestInput{}
 	if offerer, ok := controller.(ContentOfferer); ok {
-		cnt.values = []string {fl.negotiatedContent(req, offerer)}
+		cnt.values = []string{fl.negotiatedContent(req, offerer)}
 	} else {
-		cnt.values = []string {fl.negotiatedContent(req, fl.contentOfferer)}
+		cnt.values = []string{fl.negotiatedContent(req, fl.contentOfferer)}
 	}
 
 	ins[KeyNegotiatedContent] = cnt

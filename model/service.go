@@ -43,5 +43,4 @@ func (service *Service) OnEnd(ctx context.Context) {
 	}
 }
 
-
 func (service *Service) Destroy() {}

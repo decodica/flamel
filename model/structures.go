@@ -18,7 +18,7 @@ var (
 	typeOfModel     = reflect.TypeOf(Model{})
 	typeOfModelable = reflect.TypeOf((*modelable)(nil)).Elem()
 	typeOfStructure = reflect.TypeOf(structure{})
-	typeOfPLS = reflect.TypeOf((*datastore.PropertyLoadSaver)(nil)).Elem()
+	typeOfPLS       = reflect.TypeOf((*datastore.PropertyLoadSaver)(nil)).Elem()
 )
 
 //struct value represent a struct that internally can map other structs
@@ -37,7 +37,7 @@ type encodedStruct struct {
 	searchable bool
 	// if true the modelable does not get written if zeroed
 	skipIfZero    bool
-	readonly bool
+	readonly      bool
 	structName    string
 	fieldNames    map[string]encodedField
 	referencesIdx []int

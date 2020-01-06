@@ -73,10 +73,10 @@ func (renderer *ErrorRenderer) Render(w http.ResponseWriter) error {
 }
 
 type DownloadRenderer struct {
-	Mime string
+	Mime     string
 	Encoding string
 	FileName string
-	Data []byte
+	Data     []byte
 }
 
 func (renderer *DownloadRenderer) Render(w http.ResponseWriter) error {

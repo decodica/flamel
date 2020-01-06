@@ -78,7 +78,9 @@ func newContextWithStartupTime(t *testing.T, secs int) (func(), context.Context)
 	}
 
 	return func() {
-		inst.Close()
+		if err := inst.Close(); err != nil {
+			panic(err)
+		}
 	}, appengine.NewContext(req)
 }
 

@@ -309,6 +309,8 @@ func (fl flamel) parseRequestInputs(ctx context.Context, req *http.Request) (Req
 		break
 	case http.MethodPut:
 		fallthrough
+	case http.MethodPatch:
+		fallthrough
 	case http.MethodPost:
 		reqType := req.Header.Get("Content-Type")
 		// parse the multiform data if the request specifies it as its content type

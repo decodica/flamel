@@ -19,41 +19,21 @@ func TestFindRoute(t *testing.T) {
 	m.SetRoute("/param/first/second", nil)
 	m.SetRoute("/param/*", nil)
 
-	//	m.SetRoute("/*", nil)
-	m.SetRoute("/it/*", nil)
-	//m.SetRoute("/:slug", nil)
-	m.SetRoute("/it/:slug", nil)
-	m.SetRoute("/", nil)
-	m.SetRoute("/it/", nil)
-	m.SetRoute("/productslisthtml", nil)
-	m.SetRoute("/it/productslisthtml", nil)
-	m.SetRoute("/product/:slug/:nuance", nil)
-	m.SetRoute("/it/product/:slug/:nuance", nil)
-	m.SetRoute("/product/:slug", nil)
-	m.SetRoute("/it/product/:slug", nil)
-	m.SetRoute("/privacy", nil)
-	m.SetRoute("/it/privacy", nil)
-	m.SetRoute("/process", nil)
-	m.SetRoute("/it/process", nil)
-
-	mustFind := []string{
-		"/antani",
-		"/static",
-		"/station",
-		"",
-		"/static/wildcard",
-		"/static/wildcard/3",
-		"/static/wildcard/first/second/third",
-		"/param",
-		"/param/3",
-		"/param/3/end",
-		"/param/3/5",
-		"/param/first/second",
-		"/param/3/end/wildcard",
-		"/it/product",
-		"/product",
-		"/product/abc",
-		"/product/abc/nuance",
+	// map requests with expected route
+	mustFind := map[string]string{
+		"/antani": "/:param",
+		"/static": "/static",
+		"/station": "/:param",
+		"": "",
+		"/static/wildcard": "/static/*",
+		"/static/wildcard/3": "/static/*/:param",
+		"/static/wildcard/first/second/third": "/static/*",
+		"/param": "/:param",
+		"/param/3": "/param/:param",
+		"/param/3/end": "/param/:param/end",
+		"/param/3/5": "/param/:param/:end",
+		"/param/first/second": "/param/first/second",
+		"/param/3/end/wildcard": "/param/*",
 	}
 
 	mustFail := []string{
@@ -61,21 +41,36 @@ func TestFindRoute(t *testing.T) {
 		"/stai/con/me",
 	}
 
-	for _, r := range mustFind {
+	for r, _ := range mustFind {
 		route, params := m.tree.findRoute(r)
 		if route == nil {
 			t.Fatalf("couldn't find route %s", r)
 		}
 
 		var builder bytes.Buffer
+
+		count := 0
 		for _, p := range params {
+			count++
 			builder.WriteString(p.Key)
 			builder.WriteString(" = ")
 			builder.WriteString(p.Value)
 			builder.WriteString(", ")
 		}
 
-		t.Logf("found route %s for request %s with params %s", route.Name, r, builder.String())
+		if mustFind[r] == route.Name {
+			if count == 0 {
+				t.Logf("found route %s for request %s with no params", route.Name, r)
+				_ = builder.String()
+			} else {
+				t.Logf("found route %s for request %s with params %s", route.Name, r, builder.String())
+			}
+
+		} else {
+			t.Fatalf("should not find route %s for request %s", route.Name, r)
+		}
+
+
 	}
 
 	for _, r := range mustFail {

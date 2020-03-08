@@ -1,7 +1,6 @@
 package router
 
 import (
-	"sort"
 	"strings"
 )
 
@@ -24,19 +23,6 @@ type edges []edge
 
 func (e edges) Len() int {
 	return len(e)
-}
-
-// edges implement the sortable interface
-func (e edges) Less(i, j int) bool {
-	return e[i].label < e[j].label
-}
-
-func (e edges) Swap(i, j int) {
-	e[i], e[j] = e[j], e[i]
-}
-
-func (e edges) Sort() {
-	sort.Sort(e)
 }
 
 // The node of the tree
@@ -71,19 +57,16 @@ func (n node) hasParametricChildren() bool {
 func (n *node) addEdge(edge edge) {
 	n.edges = append(n.edges, edge)
 	edge.node.parent = n
-	n.edges.Sort()
 }
 
 func (n *node) updateEdge(label byte, node *node) {
-	count := len(n.edges)
-	idx := sort.Search(count, func(i int) bool {
-		return n.edges[i].label >= label
-	})
 
-	if idx < count && n.edges[idx].label == label {
-		n.edges[idx].node = node
-		node.parent = n
-		return
+	for i, e := range n.edges {
+		if e.label == label {
+			n.edges[i].node = node
+			node.parent = n
+			return
+		}
 	}
 
 	panic("update on missing edge")
@@ -91,13 +74,10 @@ func (n *node) updateEdge(label byte, node *node) {
 
 func (n *node) getEdge(label byte) *node {
 
-	count := len(n.edges)
-
-	idx := sort.Search(count, func(i int) bool {
-		return n.edges[i].label >= label
-	})
-	if idx < count && n.edges[idx].label == label {
-		return n.edges[idx].node
+	for _, e :=  range n.edges {
+		if e.label == label {
+			return e.node
+		}
 	}
 
 	return nil

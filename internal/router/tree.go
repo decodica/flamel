@@ -395,7 +395,7 @@ func (t tree) findRoute(wanted string) (*Route, Params) {
 	}
 
 	if wild != nil {
-		return wild.route, params[:pcount]
+		return wild.route, nil
 	}
 
 	return nil, nil

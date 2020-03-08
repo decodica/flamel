@@ -344,10 +344,6 @@ func (t tree) findRoute(wanted string) (*Route, Params) {
 			edge = search[0]
 		}
 
-		if edge == '/' {
-			lp = nil
-		}
-
 		n = n.getEdge(edge)
 
 		if n != nil && n.hasParametricChildren() {

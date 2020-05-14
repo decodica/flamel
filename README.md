@@ -1,19 +1,17 @@
-# Flamel: framework for Google App Engine
+<img src="https://www.decodica.com/assets/images/logo/flamel.svg" width="200">
 
-Flamel is a session-less, simple web framework built to structure and ease development of web apps running on Google App Engine using the Go API.
+# Flamel: a framework for Google App Engine
+
+Flamel is a session-less, simple web framework built to structure and ease development of web applications running on Google App Engine using the Go API.
 
 It exposes a minimalistic lifecycle and implements its own performant and low-allocation routing system.
-
-Flamel comes with a fully fledged and optional ORM-like layer (the model package) over the GCP Datastore, Search and Memcache APIs to help keep quotas low while increasing productivity.
-CORS and AMP requests are also supported. 
 
 Except for the Google Client Libraries and the Appengine Package (for obvious reasons), Flamel comes with zero dependencies.
 
 Flamel is 100% compatible with GAE go1.11 API
 
-- Fast and reliable (simple requests are responded to in less than 10000 ns)
-- Not invasive: its own packages are all optional, including the router, which means you can build your own system of top of flamel lifecycle:
-as an example, you can mix and match the model package with the official client libraries, or just use the latter.
+- Fast and reliable
+- Not invasive: its own packages are all optional, including the router, which means you can build your own system of top of flamel lifecyclele.
 Flamel is built on top of few interfaces: you can use the stock implementations or you can roll your own renderer, use your own router, build your own controller.
 - Squared and structured: the lifecycle and the basic interfaces the framework is composed of allow client code to be simple and well organized. The architecture of Flamel 
 incentives the use of stateless logic and helps in implementing proper http responses by not hiding the protocol logic.
@@ -158,26 +156,22 @@ dev_appserver.py app.yaml
 
 and sending a GET request to `localhost:8080` will make your app output `Hello Flamel!` 
 
-- [The lifecycle]
-// Todo
-
 - [Handling routes]
 // Todo
 
 - [Managing authentication]
 // Todo
 
-- [The data layer: the model package]
-// Todo
-
 ## Roadmap
 
 - Support for GAE go112 API by replacing Memcache and Search with Redis and Elastic on the GCP (or any other official solution Google will provide us with - Memorystore API perhaps?).
 - Static content caching, provided GCS and the above-mentioned KVP caching system
-- Rewriting of the `model` package using `unsafe` in place of `reflect`. This should be fun!
 
 Any help would be greatly appreciated. :)
 
 ## License
 
 Flamel uses the [MIT](LICENSE.TXT) license.
+
+
+[logo]: https://www.decodica.com/assets/images/logo/flamel.svg
